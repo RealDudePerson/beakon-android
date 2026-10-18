@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only. Cleartext traffic is disabled everywhere. Certificate trust is
+  established in code by user-driven SHA-256 fingerprint pinning (see
+  net/TlsSupport.kt); no user or system CA is added here, and there is no
+  trust-all escape hatch.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>

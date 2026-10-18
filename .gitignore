@@ -11,3 +11,7 @@ captures/
 *.jks
 *.keystore
 keystore.properties
+
+# Python
+__pycache__/
+*.pyc
