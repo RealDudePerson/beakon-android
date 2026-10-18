@@ -9,6 +9,10 @@ object Format {
     /** Formats a millisecond epoch timestamp, or a dash when absent. */
     fun time(millis: Long?): String = if (millis == null) "—" else dateTime.format(Date(millis))
 
-    /** The server sends `timestamp` in seconds; converts to millis. */
-    fun serverTime(seconds: Long?): String = time(seconds?.times(1000))
+    /**
+     * The server sends `timestamp` as a human display string (e.g. "just now",
+     * "18 hours ago"), never an epoch number. Show it verbatim, or a dash when
+     * absent. Do not try to re-derive a time from it.
+     */
+    fun serverTime(timestamp: String?): String = timestamp ?: "—"
 }

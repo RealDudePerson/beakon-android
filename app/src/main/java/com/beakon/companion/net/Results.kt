@@ -38,6 +38,13 @@ sealed interface LocationsResult {
     data object AuthRequired : LocationsResult
     data class CertificateError(val message: String) : LocationsResult
     data class NetworkError(val message: String) : LocationsResult
+
+    /**
+     * The server answered, but the body could not be decoded. Distinct from
+     * [NetworkError]: a malformed response is not a connectivity problem, and
+     * must not be reported to the user as "no network / timeout".
+     */
+    data class ParseError(val message: String) : LocationsResult
     data class ServerError(val code: Int) : LocationsResult
 }
 
@@ -88,5 +95,7 @@ fun LocationsResult.userMessage(): String? = when (this) {
     LocationsResult.AuthRequired -> "Your session expired. Sign in again from Setup to see history."
     is LocationsResult.CertificateError -> "Certificate changed or could not be verified while loading history. ($message)"
     is LocationsResult.NetworkError -> "Could not load history: no network / timeout. ($message)"
+    is LocationsResult.ParseError ->
+        "Could not load history: the server's response could not be read. ($message)"
     is LocationsResult.ServerError -> "Could not load history: server error ($code)."
 }

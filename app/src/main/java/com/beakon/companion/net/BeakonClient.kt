@@ -4,6 +4,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLPeerUnverifiedException
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -160,11 +161,7 @@ class BeakonClient(
                 when {
                     response.code == 401 || response.code == 403 -> LocationsResult.AuthRequired
                     !response.isSuccessful -> LocationsResult.ServerError(response.code)
-                    else -> {
-                        val body = response.body?.string().orEmpty()
-                        val parsed = json.decodeFromString(LocationsResponse.serializer(), body)
-                        LocationsResult.Success(parsed.locations, parsed.latest)
-                    }
+                    else -> parseLocations(response.body?.string().orEmpty())
                 }
             }
         } catch (e: SSLPeerUnverifiedException) {
@@ -174,9 +171,26 @@ class BeakonClient(
         } catch (e: IOException) {
             LocationsResult.NetworkError(e.message ?: e.javaClass.simpleName)
         } catch (e: Exception) {
-            LocationsResult.NetworkError("unreadable response: ${e.message}")
+            // Anything else went wrong while reading the response, not on the network.
+            LocationsResult.ParseError("unexpected error reading response: ${e.message}")
         }
     }
+
+    /**
+     * Decodes a `/api/locations` body.
+     *
+     * A decode failure is a [LocationsResult.ParseError], never a
+     * [LocationsResult.NetworkError]: the server answered, so the problem is the
+     * response shape, not connectivity. Extracted from [fetchLocations] so it can
+     * be exercised without a live server.
+     */
+    internal fun parseLocations(body: String): LocationsResult =
+        try {
+            val parsed = json.decodeFromString(LocationsResponse.serializer(), body)
+            LocationsResult.Success(parsed.locations, parsed.latest)
+        } catch (e: SerializationException) {
+            LocationsResult.ParseError(e.message ?: e.javaClass.simpleName)
+        }
 
     private fun parseRetryAfter(response: Response): Long? =
         response.header("Retry-After")?.trim()?.toLongOrNull()

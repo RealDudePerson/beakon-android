@@ -171,8 +171,8 @@ class AppViewModelDispatcherTest {
         runTest(mainDispatcher) {
             val guard = OffMainGuard(mainThread)
             val points = listOf(
-                LocationDto(lat = 1.0, lon = 2.0, timestamp = 123L, batt = 80, isCharging = false),
-                LocationDto(lat = 3.0, lon = 4.0, timestamp = 456L),
+                LocationDto(lat = 1.0, lon = 2.0, timestamp = "18 hours ago", batt = 80, isCharging = false),
+                LocationDto(lat = 3.0, lon = 4.0, timestamp = "3 hours ago"),
             )
             val state = FakeState(instanceUrl = "https://location2.navettas.com")
             val session = FakeSession(guard, locationsResult = LocationsResult.Success(points, points.last()))

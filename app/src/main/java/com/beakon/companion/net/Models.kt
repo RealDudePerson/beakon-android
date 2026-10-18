@@ -23,7 +23,13 @@ data class LocationReport(
 data class LocationDto(
     val lat: Double,
     val lon: Double,
-    val timestamp: Long? = null,
+    /**
+     * The server sends a human-readable display string, never an epoch number:
+     * `"just now"`, `"N minute(s) ago"`, `"N hour(s) ago"`, or `str(ts)` when
+     * older than a day (and `"HH:MM:SS"` with `?date=`). Show it verbatim; do
+     * not try to re-derive a time from it.
+     */
+    val timestamp: String? = null,
     val batt: Int? = null,
     @SerialName("ischarging") val isCharging: Boolean? = null,
 )
