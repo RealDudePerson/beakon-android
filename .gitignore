@@ -1,0 +1,13 @@
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+# keystores — never commit
+*.jks
+*.keystore
+keystore.properties
