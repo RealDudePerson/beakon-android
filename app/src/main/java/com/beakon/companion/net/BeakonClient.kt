@@ -14,6 +14,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
 /**
+ * The session-authenticated calls the UI makes on a [BeakonClient].
+ *
+ * Extracted as an interface so JVM tests can substitute a fake that asserts
+ * which dispatcher these blocking calls run on.
+ */
+interface BeakonSession {
+    /** `POST /login` — blocking. */
+    fun login(username: String, password: String): LoginResult
+
+    /** `POST /api/updatetoken` — blocking. Overwrites the account's API token. */
+    fun setApiToken(secret: String): TokenResult
+
+    /** The current `session` cookie value, if any. */
+    fun sessionCookieValue(): String?
+
+    /** `GET /api/locations` — blocking, session-authenticated. */
+    fun fetchLocations(date: String? = null): LocationsResult
+}
+
+/**
  * HTTP client for a single Beakon instance.
  *
  * Every connection is TLS with [PinningTrustManager] using [pinnedSha256]. The
@@ -26,7 +46,7 @@ class BeakonClient(
     initialSession: String? = null,
     connectTimeoutMs: Long = 15_000,
     readTimeoutMs: Long = 20_000,
-) {
+) : BeakonSession {
 
     val baseUrl: String = BeakonUrl.normalize(baseUrl)
         ?: throw IllegalArgumentException("Invalid instance URL: $baseUrl")
@@ -53,10 +73,10 @@ class BeakonClient(
     fun hasSession(): Boolean = cookieJar.cookie("session") != null
 
     /** The current `session` cookie value, if any (persisted so history survives restart). */
-    fun sessionCookieValue(): String? = cookieJar.cookie("session")?.value
+    override fun sessionCookieValue(): String? = cookieJar.cookie("session")?.value
 
     /** `POST /login` — form-encoded username + password. */
-    fun login(username: String, password: String): LoginResult {
+    override fun login(username: String, password: String): LoginResult {
         val body = FormBody.Builder()
             .add("username", username)
             .add("password", password)
@@ -81,7 +101,7 @@ class BeakonClient(
     }
 
     /** `POST /api/updatetoken` — overwrites the user's existing API token. Session-authenticated. */
-    fun setApiToken(secret: String): TokenResult {
+    override fun setApiToken(secret: String): TokenResult {
         val body = FormBody.Builder().add("secret", secret).build()
         val request = Request.Builder().url("$baseUrl/api/updatetoken").post(body).build()
         return try {
@@ -128,7 +148,7 @@ class BeakonClient(
     }
 
     /** `GET /api/locations` — session-authenticated, optional `?date=`. */
-    fun fetchLocations(date: String? = null): LocationsResult {
+    override fun fetchLocations(date: String?): LocationsResult {
         val urlBuilder = "$baseUrl/api/locations".toHttpUrlOrNull()?.newBuilder()
             ?: return LocationsResult.NetworkError("invalid instance URL")
         if (!date.isNullOrBlank()) {

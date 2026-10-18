@@ -8,8 +8,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.beakon.companion.BeakonApplication
-import com.beakon.companion.data.AppPreferences
+import com.beakon.companion.data.AppContainer
 import com.beakon.companion.net.BeakonClient
+import com.beakon.companion.net.BeakonSession
 import com.beakon.companion.net.BeakonUrl
 import com.beakon.companion.net.CertificateFingerprint
 import com.beakon.companion.net.CertificateInfo
@@ -26,16 +27,57 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class AppViewModel(application: Application) : AndroidViewModel(application) {
+/**
+ * Blocking certificate probe. Injected so tests can assert the dispatcher the
+ * probe runs on. Implementations block and must be called off the main thread.
+ */
+fun interface CertificateProbeFn {
+    fun probe(host: String, port: Int): CertificateInfo
+}
 
-    private val container = (application as BeakonApplication).container
+/** Creates a [BeakonSession] for an instance. Injected so tests can supply a fake. */
+fun interface BeakonClientFactory {
+    fun create(baseUrl: String, pinnedSha256: String?, initialSession: String?): BeakonSession
+}
 
-    val preferences: AppPreferences get() = container.preferences
-    val status: StateFlow<TrackingStatus> = container.trackingState.status
+/**
+ * The process-wide state [AppViewModel] reads and writes. Extracted from the
+ * concrete [AppContainer] so JVM tests can substitute in-memory fakes.
+ */
+interface AppViewModelState {
+    var instanceUrl: String?
+    var username: String?
+    var intervalSeconds: Int
+    fun clearSession()
+    fun pinFor(host: String): String?
+    fun storePin(host: String, sha256: String)
+    fun secret(): String?
+    fun storeSecret(secret: String)
+    fun session(): String?
+    fun storeSession(value: String)
+    fun clearSecrets()
+    val trackingStatus: StateFlow<TrackingStatus>
+    fun setTracking(on: Boolean)
+}
+
+class AppViewModel @JvmOverloads constructor(
+    application: Application,
+    private val state: AppViewModelState = AndroidAppViewModelState(
+        (application as BeakonApplication).container,
+    ),
+    private val probe: CertificateProbeFn = CertificateProbeFn { host, port ->
+        CertificateProbe.probe(host, port)
+    },
+    private val clients: BeakonClientFactory = BeakonClientFactory { url, pin, session ->
+        BeakonClient(url, pin, session)
+    },
+) : AndroidViewModel(application) {
+
+    val status: StateFlow<TrackingStatus> = state.trackingStatus
 
     // Setup / login form.
-    var instanceUrl by mutableStateOf(preferences.instanceUrl.orEmpty())
-    var username by mutableStateOf(preferences.username.orEmpty())
+    var instanceUrl by mutableStateOf(state.instanceUrl.orEmpty())
+    var username by mutableStateOf(state.username.orEmpty())
     var password by mutableStateOf("")
 
     var certificateInfo by mutableStateOf<CertificateInfo?>(null)
@@ -48,7 +90,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var busy by mutableStateOf(false)
         private set
-    var loggedIn by mutableStateOf(container.secrets.secret() != null)
+    var loggedIn by mutableStateOf(state.secret() != null)
         private set
 
     // History / map.
@@ -59,12 +101,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var historyLoading by mutableStateOf(false)
         private set
 
-    var intervalSeconds by mutableIntStateOf(preferences.intervalSeconds)
+    var intervalSeconds by mutableIntStateOf(state.intervalSeconds)
         private set
 
     fun setInterval(seconds: Int) {
-        preferences.intervalSeconds = seconds
-        intervalSeconds = preferences.intervalSeconds
+        state.intervalSeconds = seconds
+        intervalSeconds = state.intervalSeconds
     }
 
     fun onUrlChanged(value: String) {
@@ -103,12 +145,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         busy = true
         setupMessage = null
         viewModelScope.launch {
-            val result = runCatching { CertificateProbe.probe(host, port) }
+            // Blocking socket I/O: never on the main thread.
+            val result = runCatching {
+                withContext(Dispatchers.IO) { probe.probe(host, port) }
+            }
             withContext(Dispatchers.Main) {
                 busy = false
                 result.onSuccess { info ->
                     certificateInfo = info
-                    val pinned = container.fingerprints.pinFor(host)
+                    val pinned = state.pinFor(host)
                     when {
                         pinned == null -> {
                             certificateAccepted = false
@@ -171,27 +216,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         busy = true
         setupMessage = null
         viewModelScope.launch {
-            val client = BeakonClient(url, info.sha256)
-            when (val login = client.login(username.trim(), password)) {
-                LoginResult.Success -> Unit
-                else -> {
-                    withContext(Dispatchers.Main) {
-                        busy = false
-                        setupMessage = login.userMessage()
-                    }
-                    return@launch
+            val client = clients.create(url, info.sha256, null)
+            // Blocking network calls: never on the main thread.
+            val login = withContext(Dispatchers.IO) { client.login(username.trim(), password) }
+            if (login != LoginResult.Success) {
+                withContext(Dispatchers.Main) {
+                    busy = false
+                    setupMessage = login.userMessage()
                 }
+                return@launch
             }
             val secret = generateSecret()
-            val token = client.setApiToken(secret)
+            val token = withContext(Dispatchers.IO) { client.setApiToken(secret) }
             withContext(Dispatchers.Main) {
                 busy = false
                 if (token == TokenResult.Success) {
-                    container.fingerprints.store(host, info.sha256)
-                    container.secrets.store(secret)
-                    client.sessionCookieValue()?.let { container.secrets.storeSession(it) }
-                    container.preferences.instanceUrl = url
-                    container.preferences.username = username.trim()
+                    state.storePin(host, info.sha256)
+                    state.storeSecret(secret)
+                    client.sessionCookieValue()?.let { state.storeSession(it) }
+                    state.instanceUrl = url
+                    state.username = username.trim()
                     password = ""
                     loggedIn = true
                     setupMessage = null
@@ -203,17 +247,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
-        container.trackingState.setTracking(false)
-        container.preferences.clearSession()
-        container.secrets.clear()
-        container.secrets.clearSession()
+        state.setTracking(false)
+        state.clearSession()
+        state.clearSecrets()
         loggedIn = false
         history = emptyList()
         historyMessage = null
     }
 
     fun loadHistory() {
-        val url = preferences.instanceUrl
+        val url = state.instanceUrl
         if (url == null) {
             historyMessage = "Not signed in. Complete Setup first."
             return
@@ -226,8 +269,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         historyLoading = true
         historyMessage = null
         viewModelScope.launch {
-            val client = BeakonClient(url, container.fingerprints.pinFor(host), container.secrets.session())
-            val result = client.fetchLocations()
+            val client = clients.create(url, state.pinFor(host), state.session())
+            // Blocking network call: never on the main thread.
+            val result = withContext(Dispatchers.IO) { client.fetchLocations() }
             withContext(Dispatchers.Main) {
                 historyLoading = false
                 when (result) {
@@ -246,4 +290,54 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         SecureRandom().nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
     }
+}
+
+/**
+ * Adapts the production [AppContainer] to [AppViewModelState]. Kept private so
+ * the concrete Android stores never leak into the ViewModel's API.
+ */
+private class AndroidAppViewModelState(
+    private val container: AppContainer,
+) : AppViewModelState {
+
+    override var instanceUrl: String?
+        get() = container.preferences.instanceUrl
+        set(value) {
+            container.preferences.instanceUrl = value
+        }
+
+    override var username: String?
+        get() = container.preferences.username
+        set(value) {
+            container.preferences.username = value
+        }
+
+    override var intervalSeconds: Int
+        get() = container.preferences.intervalSeconds
+        set(value) {
+            container.preferences.intervalSeconds = value
+        }
+
+    override fun clearSession() = container.preferences.clearSession()
+
+    override fun pinFor(host: String): String? = container.fingerprints.pinFor(host)
+
+    override fun storePin(host: String, sha256: String) = container.fingerprints.store(host, sha256)
+
+    override fun secret(): String? = container.secrets.secret()
+
+    override fun storeSecret(secret: String) = container.secrets.store(secret)
+
+    override fun session(): String? = container.secrets.session()
+
+    override fun storeSession(value: String) = container.secrets.storeSession(value)
+
+    override fun clearSecrets() {
+        container.secrets.clear()
+        container.secrets.clearSession()
+    }
+
+    override val trackingStatus: StateFlow<TrackingStatus> = container.trackingState.status
+
+    override fun setTracking(on: Boolean) = container.trackingState.setTracking(on)
 }
