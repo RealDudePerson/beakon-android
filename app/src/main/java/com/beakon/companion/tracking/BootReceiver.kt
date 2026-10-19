@@ -15,9 +15,11 @@ import com.beakon.companion.BeakonApplication
  * surfaces an actionable error. It never fails silently.
  *
  * Android 15 (API 35) permits `location` foreground services to start from
- * `BOOT_COMPLETED`; see `BootStartDecision`/README for the evidence. We do not
- * declare `directBootAware`/`LOCKED_BOOT_COMPLETED`, because credential-encrypted
- * storage is unavailable at locked boot.
+ * `BOOT_COMPLETED`. The restricted types are dataSync, camera, mediaPlayback,
+ * phoneCall, mediaProjection and microphone - `location` is not among them:
+ * https://developer.android.com/about/versions/15/behavior-changes-15#fgs-boot-completed
+ * We do not declare `directBootAware`/`LOCKED_BOOT_COMPLETED`, because
+ * credential-encrypted storage is unavailable at locked boot.
  */
 class BootReceiver : BroadcastReceiver() {
 
