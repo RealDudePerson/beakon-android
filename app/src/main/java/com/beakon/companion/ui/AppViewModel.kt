@@ -54,6 +54,7 @@ interface AppViewModelState {
     fun clearSession()
     fun pinFor(host: String): String?
     fun storePin(host: String, sha256: String)
+    fun clearPin(host: String)
     fun secret(): String?
     fun storeSecret(secret: String)
     fun session(): String?
@@ -88,6 +89,14 @@ class AppViewModel @JvmOverloads constructor(
     var certificateAccepted by mutableStateOf(false)
         private set
     var certificateWarning by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * True once a login attempt failed because the platform does not trust the
+     * certificate. The UI uses this to reveal the explicit fingerprint fallback;
+     * the fallback is never offered for a platform-trusted certificate.
+     */
+    var certificateRejected by mutableStateOf(false)
         private set
     var setupMessage by mutableStateOf<String?>(null)
         private set
@@ -127,6 +136,7 @@ class AppViewModel @JvmOverloads constructor(
         certificateInfo = null
         certificateAccepted = false
         certificateWarning = null
+        certificateRejected = false
         setupMessage = null
     }
 
@@ -138,11 +148,30 @@ class AppViewModel @JvmOverloads constructor(
         password = value
     }
 
+    /**
+     * Records the user's explicit decision to trust the presented certificate by
+     * fingerprint. This is only offered for a certificate the platform rejects,
+     * and only stores the fingerprint once the user has actually accepted it.
+     */
     fun acceptCertificate(accepted: Boolean) {
         certificateAccepted = accepted
+        val info = certificateInfo ?: return
+        if (info.trustedByPlatform) return
+        if (accepted) {
+            state.storePin(info.host, info.sha256)
+        } else {
+            // Unchecking withdraws consent: remove the stored fingerprint so the
+            // fallback is no longer available for this host.
+            state.clearPin(info.host)
+        }
     }
 
-    /** Fetch and display the certificate before any credentials are sent. */
+    /**
+     * Optional diagnostic: fetch and display the certificate. This is never
+     * required to log in. When the platform already trusts the certificate the
+     * user is told so and no fingerprint is offered; only a certificate the
+     * platform rejects can be accepted by fingerprint.
+     */
     fun probeCertificate() {
         val url = BeakonUrl.normalize(instanceUrl)
         if (url == null) {
@@ -168,10 +197,16 @@ class AppViewModel @JvmOverloads constructor(
                     certificateInfo = info
                     val pinned = state.pinFor(host)
                     when {
+                        info.trustedByPlatform -> {
+                            // Platform trust: no fingerprint is needed or offered.
+                            certificateAccepted = true
+                            certificateWarning = null
+                        }
                         pinned == null -> {
                             certificateAccepted = false
                             certificateWarning =
-                                "No fingerprint is stored for $host yet. Review it carefully, then accept."
+                                "This certificate is NOT trusted by this device. If you recognize the " +
+                                    "fingerprint below, you can choose to trust it by fingerprint."
                         }
                         CertificateFingerprint.matches(info.sha256, pinned) -> {
                             certificateAccepted = true
@@ -180,8 +215,9 @@ class AppViewModel @JvmOverloads constructor(
                         else -> {
                             certificateAccepted = false
                             certificateWarning =
-                                "The presented fingerprint does NOT match the one previously accepted for $host. " +
-                                    "Do not accept unless you expected the certificate to change."
+                                "This certificate is NOT trusted by this device and its fingerprint does " +
+                                    "NOT match the one previously accepted for $host. Do not accept unless " +
+                                    "you expected the certificate to change."
                         }
                     }
                 }.onFailure { error ->
@@ -195,22 +231,15 @@ class AppViewModel @JvmOverloads constructor(
 
     /**
      * Log in, then overwrite the account's API token with a freshly generated
-     * secret. The UI states plainly, before this is called, that the token is
-     * overwritten.
+     * secret. No certificate step is required: the connection uses platform
+     * trust. A previously accepted fingerprint is passed only as an explicit
+     * fallback for a certificate the platform rejects. The UI states plainly,
+     * before this is called, that the token is overwritten.
      */
     fun completeSetup() {
         val url = BeakonUrl.normalize(instanceUrl)
         if (url == null) {
             setupMessage = "Enter a valid instance URL (https://host). Plain http:// is not supported."
-            return
-        }
-        val info = certificateInfo
-        if (info == null) {
-            setupMessage = "Fetch and review the certificate before signing in."
-            return
-        }
-        if (!certificateAccepted) {
-            setupMessage = "You must accept the certificate fingerprint before signing in."
             return
         }
         if (username.isBlank()) {
@@ -229,9 +258,20 @@ class AppViewModel @JvmOverloads constructor(
         busy = true
         setupMessage = null
         viewModelScope.launch {
-            val client = clients.create(url, info.sha256, null)
+            // Platform trust is the default. A stored fingerprint is used only
+            // if the platform rejects the certificate; on the platform-trust
+            // path no fingerprint is stored or consulted.
+            val client = clients.create(url, state.pinFor(host), null)
             // Blocking network calls: never on the main thread.
             val login = withContext(Dispatchers.IO) { client.login(username.trim(), password) }
+            if (login is LoginResult.CertificateError) {
+                withContext(Dispatchers.Main) {
+                    busy = false
+                    certificateRejected = true
+                    setupMessage = login.userMessage()
+                }
+                return@launch
+            }
             if (login != LoginResult.Success) {
                 withContext(Dispatchers.Main) {
                     busy = false
@@ -244,13 +284,16 @@ class AppViewModel @JvmOverloads constructor(
             withContext(Dispatchers.Main) {
                 busy = false
                 if (token == TokenResult.Success) {
-                    state.storePin(host, info.sha256)
+                    // No pin is stored here: a successful login means either the
+                    // platform trusted the certificate or an already-accepted
+                    // fingerprint did.
                     state.storeSecret(secret)
                     client.sessionCookieValue()?.let { state.storeSession(it) }
                     state.instanceUrl = url
                     state.username = username.trim()
                     password = ""
                     loggedIn = true
+                    certificateRejected = false
                     setupMessage = null
                 } else {
                     setupMessage = token.userMessage()
@@ -343,6 +386,8 @@ private class AndroidAppViewModelState(
     override fun pinFor(host: String): String? = container.fingerprints.pinFor(host)
 
     override fun storePin(host: String, sha256: String) = container.fingerprints.store(host, sha256)
+
+    override fun clearPin(host: String) = container.fingerprints.clear(host)
 
     override fun secret(): String? = container.secrets.secret()
 

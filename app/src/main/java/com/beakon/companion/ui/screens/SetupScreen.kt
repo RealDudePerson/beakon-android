@@ -16,6 +16,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -74,11 +75,21 @@ fun SetupScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Button(
+        // Optional diagnostic. A CA-signed server (trusted by the device) needs
+        // no certificate step at all: sign in directly below.
+        OutlinedButton(
             onClick = viewModel::probeCertificate,
             enabled = !viewModel.busy && viewModel.instanceUrl.isNotBlank(),
         ) {
-            Text("Fetch certificate")
+            Text("Check certificate (optional)")
+        }
+
+        if (viewModel.certificateRejected && viewModel.certificateInfo == null) {
+            Text(
+                "The certificate is not trusted by this device. Check it to review its " +
+                    "fingerprint, then choose whether to trust it.",
+                color = MaterialTheme.colorScheme.error,
+            )
         }
 
         viewModel.certificateInfo?.let { info ->
@@ -115,11 +126,12 @@ fun SetupScreen(
             Text("I understand the account's API token will be overwritten.")
         }
 
+        // Deliberately NOT gated on a certificate fingerprint: platform trust is
+        // the default path and needs no user interaction.
         Button(
             onClick = viewModel::completeSetup,
             enabled = !viewModel.busy &&
                 acknowledged &&
-                viewModel.certificateAccepted &&
                 viewModel.username.isNotBlank() &&
                 viewModel.password.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
@@ -160,17 +172,32 @@ private fun CertificateCard(
                 "Valid: ${dateFormat.format(Date(info.notBefore))} – ${dateFormat.format(Date(info.notAfter))}",
                 style = MaterialTheme.typography.bodySmall,
             )
-            Text("SHA-256 fingerprint:", style = MaterialTheme.typography.bodySmall)
-            SelectionContainer {
+            if (info.trustedByPlatform) {
+                // Trusted by the device's roots: no fingerprint is shown or
+                // required, and there is nothing to accept.
                 Text(
-                    info.sha256,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
+                    "Trusted by this device. No fingerprint is needed.",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = accepted, onCheckedChange = onAcceptChange)
-                Text("I accept this fingerprint for ${info.host}")
+            } else {
+                Text(
+                    "NOT trusted by this device. Review the fingerprint and choose to trust it " +
+                        "only if you recognize it.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                Text("SHA-256 fingerprint:", style = MaterialTheme.typography.bodySmall)
+                SelectionContainer {
+                    Text(
+                        info.sha256,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accepted, onCheckedChange = onAcceptChange)
+                    Text("I recognize this fingerprint and choose to trust it for ${info.host}")
+                }
             }
         }
     }

@@ -6,8 +6,10 @@ as a list and on a map. See `REQUIREMENTS.md` for the full specification.
 
 ## What it does
 
-- **Setup / Login** — instance URL, username, password, and deliberate
-  acceptance of the server's self-signed certificate (SHA-256 fingerprint).
+- **Setup / Login** — instance URL, username and password. The server
+  certificate is trusted through the device's platform trust store; a CA-signed
+  server needs no certificate step at all. Fingerprint acceptance is an optional
+  fallback offered only for a certificate the platform rejects.
 - **Status** — tracking on/off, last fix, last successful send, points sent today,
   battery/charging, and a specific message for the current error.
 - **Map** — osmdroid + OSM raster tiles, own history as a polyline with the
@@ -22,12 +24,17 @@ next two ticks.
 
 ## TLS
 
-The instance uses an adhoc self-signed certificate. On first connection the app
-reads the presented certificate and shows its SHA-256 fingerprint, subject and
-issuer. The user must accept it before credentials are sent; the fingerprint is
-stored per host. Later connections refuse to proceed if the fingerprint changes.
-There is **no** trust-all trust manager and cleartext HTTP is disabled
-(`network_security_config.xml`).
+Trust uses the device's **platform trust store** by default: a certificate whose
+chain validates against the trusted roots (for example Let's Encrypt) connects
+with no user interaction, and no fingerprint is stored or consulted. This means a
+CA-signed server survives certificate renewal without asking the user again.
+
+Fingerprint pinning remains only as an **explicit fallback**: if the platform
+rejects the certificate (for example the adhoc self-signed certificate on the
+app's own port), the user can inspect the presented certificate and accept its
+SHA-256 fingerprint. The fingerprint is stored per host and only then is that one
+untrusted certificate accepted. There is **no** trust-all trust manager and
+cleartext HTTP is disabled (`network_security_config.xml`).
 
 ## Build
 
@@ -71,8 +78,10 @@ second, different self-signed pair for testing "fingerprint changed" behaviour.
 
 The JVM integration test (`app/src/test/.../MockServerIntegrationTest.kt`) starts
 this mock itself and exercises bad-password login, good-password login with an
-accepted certificate, a `201`, a `401`, a `429` with backoff, and a changed
-fingerprint. It is skipped (not failed) if `python3` is unavailable.
+accepted certificate, a platform-trusted handshake that consults no fingerprint,
+a self-signed certificate refused with no accepted fingerprint, a `201`, a `401`,
+a `429` with backoff, and a changed fingerprint. It is skipped (not failed) if
+`python3` is unavailable.
 
 ```bash
 ./gradlew test --tests '*MockServerIntegrationTest'

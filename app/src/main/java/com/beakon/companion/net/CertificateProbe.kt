@@ -14,22 +14,27 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
 /**
- * Reads the certificate an instance presents, before any credentials are sent.
+ * Reads the certificate an instance presents, without sending any credentials.
  *
- * The trust manager below captures the leaf certificate and then *aborts* the
- * handshake. Nothing is trusted here: this is a read-only probe whose only job
- * is to surface the fingerprint, subject and issuer to the user.
+ * This is a *diagnostic* affordance, never a gate: a normal CA-signed server is
+ * logged into without it. It captures the presented chain with a read-only trust
+ * manager that aborts the handshake, then separately evaluates that chain with
+ * the platform/default trust manager so the UI can tell the user whether the
+ * certificate is already trusted (no fingerprint needed) or not.
  */
 object CertificateProbe {
 
     @SuppressLint("CustomX509TrustManager")
     fun probe(host: String, port: Int, timeoutMs: Int = 10_000): CertificateInfo {
-        val captured = AtomicReference<X509Certificate?>(null)
+        val captured = AtomicReference<Array<X509Certificate>?>(null)
+        val capturedAuthType = AtomicReference<String?>(null)
         val captureManager = object : X509TrustManager {
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                val leaf = chain?.firstOrNull()
+                val certificates = chain?.takeIf { it.isNotEmpty() }
+                    ?.let { presented -> Array(presented.size) { presented[it] } }
                     ?: throw CertificateException("Server presented an empty certificate chain")
-                captured.set(leaf)
+                captured.set(certificates)
+                capturedAuthType.set(authType)
                 throw CertificateException("Certificate captured for fingerprint display")
             }
 
@@ -56,16 +61,24 @@ object CertificateProbe {
             throw IOException("Could not reach $host:$port to read its certificate: ${e.message}", e)
         }
 
-        val certificate = captured.get()
+        val chain = captured.get()
             ?: throw IOException("$host:$port did not present a certificate")
+        val leaf = chain.first()
+        // Whether the device already trusts this chain decides whether the user
+        // is offered a fingerprint fallback at all.
+        val trustedByPlatform = runCatching {
+            TlsSupport.defaultTrustManager().checkServerTrusted(chain, capturedAuthType.get())
+        }.isSuccess
+
         return CertificateInfo(
             host = host,
             port = port,
-            sha256 = CertificateFingerprint.sha256(certificate),
-            subject = certificate.subjectX500Principal.name,
-            issuer = certificate.issuerX500Principal.name,
-            notBefore = certificate.notBefore.time,
-            notAfter = certificate.notAfter.time,
+            sha256 = CertificateFingerprint.sha256(leaf),
+            subject = leaf.subjectX500Principal.name,
+            issuer = leaf.issuerX500Principal.name,
+            notBefore = leaf.notBefore.time,
+            notAfter = leaf.notAfter.time,
+            trustedByPlatform = trustedByPlatform,
         )
     }
 }

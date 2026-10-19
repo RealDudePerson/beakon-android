@@ -167,8 +167,104 @@ class AppViewModelDispatcherTest {
         }
 
     @Test
-    fun `loadHistory fetches locations off the main dispatcher`() =
+    fun `completeSetup logs in without any certificate interaction`() =
         runTest(mainDispatcher) {
+            val guard = OffMainGuard(mainThread)
+            val state = FakeState(instanceUrl = "https://location2.navettas.com", username = "demo")
+            val probe = RecordingProbe(certificateInfo())
+            val session = FakeSession(guard, sessionCookie = "session-abc")
+            val viewModel = AppViewModel(
+                application = Application(),
+                state = state,
+                probe = probe,
+                clients = FakeClientFactory(session),
+            )
+            viewModel.onPasswordChanged("correct-horse")
+
+            viewModel.completeSetup()
+            awaitSettled { !viewModel.busy }
+
+            assertEquals("a CA-signed login must not require the certificate probe", 0, probe.calls)
+            assertTrue("a platform-trusted login must succeed with no certificate step", viewModel.loggedIn)
+            assertNull(viewModel.setupMessage)
+            assertNull("no fingerprint may be stored on the platform-trust path", state.storedPin)
+            assertNotNull("the generated API secret must be stored", state.storedSecret)
+        }
+
+    @Test
+    fun `a certificate failure surfaces an actionable reason and the explicit fallback then succeeds`() =
+        runTest(mainDispatcher) {
+            val guard = OffMainGuard(mainThread)
+            val state = FakeState(instanceUrl = "https://location2.navettas.com", username = "demo")
+            val info = certificateInfo()
+            val session = SequencedSession(
+                guard = guard,
+                loginResults = mutableListOf(
+                    LoginResult.CertificateError(
+                        "the server certificate is not trusted by this device: untrusted certificate chain",
+                    ),
+                    LoginResult.Success,
+                ),
+            )
+            val viewModel = AppViewModel(
+                application = Application(),
+                state = state,
+                probe = FakeProbe(guard, info),
+                clients = FakeClientFactory(session),
+            )
+            viewModel.onPasswordChanged("correct-horse")
+
+            // First attempt: the platform rejects -> actionable failure, no login,
+            // and the fallback is flagged but not yet taken.
+            viewModel.completeSetup()
+            awaitSettled { !viewModel.busy }
+            assertFalse(viewModel.loggedIn)
+            assertTrue("a real verification failure must be flagged", viewModel.certificateRejected)
+            assertNull("no fingerprint may be stored before the user accepts one", state.storedPin)
+            val message = viewModel.setupMessage
+            assertNotNull("a certificate failure must surface a message", message)
+            assertTrue(
+                "the message must name the reason, was: $message",
+                message!!.contains("not trusted by this device"),
+            )
+
+            // The user deliberately inspects and accepts the fingerprint.
+            viewModel.probeCertificate()
+            awaitSettled { !viewModel.busy }
+            assertNotNull(viewModel.certificateInfo)
+            viewModel.acceptCertificate(true)
+            assertEquals("an explicit accept must store the fingerprint", info.sha256, state.storedPin?.second)
+
+            // Retry: the accepted fingerprint is now used as the fallback.
+            viewModel.completeSetup()
+            awaitSettled { !viewModel.busy }
+            assertTrue("the explicit fallback must let the retry succeed", viewModel.loggedIn)
+        }
+
+    @Test
+    fun `unchecking the fingerprint acceptance withdraws the stored pin`() =
+        runTest(mainDispatcher) {
+            val guard = OffMainGuard(mainThread)
+            val state = FakeState(instanceUrl = "https://location2.navettas.com")
+            val info = certificateInfo()
+            val viewModel = AppViewModel(
+                application = Application(),
+                state = state,
+                probe = FakeProbe(guard, info),
+                clients = FakeClientFactory(FakeSession(guard)),
+            )
+
+            viewModel.probeCertificate()
+            awaitSettled { !viewModel.busy }
+            viewModel.acceptCertificate(true)
+            assertEquals("accepting must store the fingerprint", info.sha256, state.storedPin?.second)
+
+            viewModel.acceptCertificate(false)
+            assertNull("withdrawing consent must remove the fingerprint", state.storedPin)
+        }
+
+    @Test
+    fun `loadHistory fetches locations off the main dispatcher`() =        runTest(mainDispatcher) {
             val guard = OffMainGuard(mainThread)
             val points = listOf(
                 LocationDto(lat = 1.0, lon = 2.0, timestamp = "18 hours ago", batt = 80, isCharging = false),
@@ -275,6 +371,41 @@ private class FakeClientFactory(private val session: BeakonSession) : BeakonClie
     override fun create(baseUrl: String, pinnedSha256: String?, initialSession: String?): BeakonSession = session
 }
 
+/** A probe that records whether it was called, to prove a login needs no certificate step. */
+private class RecordingProbe(private val info: CertificateInfo) : CertificateProbeFn {
+    var calls = 0
+        private set
+
+    override fun probe(host: String, port: Int): CertificateInfo {
+        calls++
+        return info
+    }
+}
+
+/** A session whose login results are consumed in order (failure first, then success). */
+private class SequencedSession(
+    private val guard: OffMainGuard,
+    private val loginResults: MutableList<LoginResult>,
+    private val sessionCookie: String? = "session-cookie",
+) : BeakonSession {
+    override fun login(username: String, password: String): LoginResult {
+        guard.check("BeakonSession.login")
+        return loginResults.removeAt(0)
+    }
+
+    override fun setApiToken(secret: String): TokenResult {
+        guard.check("BeakonSession.setApiToken")
+        return TokenResult.Success
+    }
+
+    override fun sessionCookieValue(): String? = sessionCookie
+
+    override fun fetchLocations(date: String?): LocationsResult {
+        guard.check("BeakonSession.fetchLocations")
+        return LocationsResult.Success(emptyList(), null)
+    }
+}
+
 private class FakeState(
     override var instanceUrl: String? = null,
     override var username: String? = null,
@@ -306,6 +437,11 @@ private class FakeState(
     override fun storePin(host: String, sha256: String) {
         pins[host] = sha256
         storedPin = host to sha256
+    }
+
+    override fun clearPin(host: String) {
+        pins.remove(host)
+        if (storedPin?.first == host) storedPin = null
     }
 
     override fun secret(): String? = storedSecret

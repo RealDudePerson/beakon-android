@@ -6,17 +6,26 @@ import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLPeerUnverifiedException
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /**
- * TLS plumbing for deliberate, user-driven certificate pinning.
+ * TLS plumbing. **Platform trust is the default**: a certificate whose chain
+ * validates against the device's trusted roots is accepted with no user
+ * interaction, and no fingerprint is stored or consulted. This is what removes
+ * the recurring "re-accept the certificate after every renewal" burden for a
+ * CA-signed (e.g. Let's Encrypt) server.
  *
- * There is intentionally no trust-all manager here. The only way a self-signed
- * certificate is accepted is by an exact SHA-256 fingerprint match against a
- * value the user explicitly approved and that is stored per host.
+ * Fingerprint pinning survives only as an explicit fallback for a certificate
+ * the platform *rejects* (for example the self-signed adhoc certificate on the
+ * app's own port). There is intentionally no trust-all manager here: an
+ * untrusted certificate is accepted only by an exact SHA-256 match against a
+ * value the user explicitly approved and that is stored per host. Platform
+ * trust is stricter than a hand-pinned leaf, so this is a tightening, not a
+ * loosening.
  */
 object TlsSupport {
 
@@ -28,11 +37,12 @@ object TlsSupport {
     }
 
     /**
-     * An [SSLSocketFactory] that accepts the leaf certificate when its SHA-256
-     * fingerprint equals [pinnedSha256]; otherwise it delegates to the platform
-     * trust manager (so ordinary publicly-signed certificates still validate).
+     * An [SSLSocketFactory] that trusts whatever the platform trusts and, **only
+     * when the platform rejects the chain**, additionally accepts the leaf
+     * certificate when its SHA-256 fingerprint equals [pinnedSha256].
      *
-     * This is NOT "trust all": it accepts exactly one pinned certificate.
+     * This is NOT "trust all": it accepts exactly one user-pinned certificate,
+     * and only as a fallback.
      */
     fun pinningSocketFactory(pinnedSha256: String?): Pair<SSLSocketFactory, X509TrustManager> {
         val manager = PinningTrustManager(pinnedSha256)
@@ -40,28 +50,97 @@ object TlsSupport {
         context.init(null, arrayOf<TrustManager>(manager), SecureRandom())
         return context.socketFactory to manager
     }
+
+    /**
+     * Turns a TLS failure into an actionable reason naming the cause (untrusted
+     * chain, hostname mismatch, expired, not yet valid, ...) rather than a
+     * generic "could not connect".
+     *
+     * Walks the cause chain because JSSE wraps the trust manager's exception
+     * inside an [javax.net.ssl.SSLHandshakeException].
+     */
+    fun describeTlsFailure(error: Throwable): String {
+        val causes = generateSequence(error) { it.cause }.toList()
+        causes.filterIsInstance<SSLPeerUnverifiedException>().firstOrNull()?.let { peer ->
+            return "the server's hostname does not match its certificate " +
+                "(${peer.message ?: "hostname verification failed"})"
+        }
+        causes.filterIsInstance<UntrustedCertificateException>().firstOrNull()?.let { untrusted ->
+            return untrusted.message ?: "the server certificate is not trusted by this device"
+        }
+        causes.filterIsInstance<CertificateException>().firstOrNull()?.let { certificateFailure ->
+            return certificateFailureReason(certificateFailure)
+        }
+        return error.message ?: error.javaClass.simpleName
+    }
+
+    /** Maps a platform certificate failure to a short, human-readable reason. */
+    internal fun certificateFailureReason(failure: CertificateException): String {
+        val raw = failure.message.orEmpty()
+        return when {
+            raw.contains("unable to find valid certification path", ignoreCase = true) ||
+                raw.contains("PKIX", ignoreCase = true) ||
+                raw.contains("CertPathValidator", ignoreCase = true) ->
+                "untrusted certificate chain (self-signed or unknown issuer)"
+            raw.contains("expired", ignoreCase = true) -> "certificate has expired"
+            raw.contains("not yet valid", ignoreCase = true) -> "certificate is not yet valid"
+            raw.isBlank() -> "certificate could not be verified"
+            else -> raw
+        }
+    }
 }
 
-// Lint warns about custom X509TrustManagers because they usually disable
-// validation. This one does not: it accepts exactly one user-pinned certificate
-// and otherwise delegates to the platform trust manager.
-@SuppressLint("CustomX509TrustManager")
-class PinningTrustManager(private val pinnedSha256: String?) : X509TrustManager {
+/**
+ * Thrown when a certificate is neither trusted by the platform nor a match for
+ * a fingerprint the user explicitly accepted.
+ */
+class UntrustedCertificateException(
+    message: String,
+    cause: Throwable? = null,
+) : CertificateException(message, cause)
 
-    private val delegate = TlsSupport.defaultTrustManager()
+// Lint warns about custom X509TrustManagers because they usually disable
+// validation. This one does not: it consults the platform trust manager FIRST
+// and only falls back to an exact, user-accepted SHA-256 fingerprint match when
+// the platform rejects the chain.
+@SuppressLint("CustomX509TrustManager")
+class PinningTrustManager(
+    private val pinnedSha256: String?,
+    private val delegate: X509TrustManager = TlsSupport.defaultTrustManager(),
+    private val fingerprintMatches: (presented: String, pinned: String) -> Boolean =
+        CertificateFingerprint::matches,
+) : X509TrustManager {
 
     override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
         val certificates = chain ?: emptyArray()
         val leaf = certificates.firstOrNull()
             ?: throw CertificateException("Server presented an empty certificate chain")
-        val presented = CertificateFingerprint.sha256(leaf)
-        if (pinnedSha256 != null && CertificateFingerprint.matches(presented, pinnedSha256)) {
+
+        try {
+            // Platform trust is the default path. When it succeeds the pin is
+            // never consulted, so a CA-signed certificate needs no fingerprint
+            // and survives renewal without user interaction.
+            delegate.checkServerTrusted(certificates, authType)
             return
+        } catch (platformFailure: CertificateException) {
+            // The platform rejected the chain. Fall back to an exact match
+            // against a fingerprint the user explicitly accepted, if any.
+            if (pinnedSha256 != null &&
+                fingerprintMatches(CertificateFingerprint.sha256(leaf), pinnedSha256)
+            ) {
+                return
+            }
+            val reason = TlsSupport.certificateFailureReason(platformFailure)
+            val pinNote = if (pinnedSha256 != null) {
+                " and it does not match the accepted fingerprint"
+            } else {
+                ""
+            }
+            throw UntrustedCertificateException(
+                "the server certificate is not trusted by this device: $reason$pinNote",
+                platformFailure,
+            )
         }
-        // No pin, or a non-matching pin: normal platform validation decides. A
-        // self-signed certificate is rejected here, which is correct until the
-        // user has accepted a fingerprint.
-        delegate.checkServerTrusted(certificates, authType)
     }
 
     override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {

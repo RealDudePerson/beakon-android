@@ -3,7 +3,6 @@ package com.beakon.companion.net
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
-import javax.net.ssl.SSLPeerUnverifiedException
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
@@ -37,9 +36,12 @@ interface BeakonSession {
 /**
  * HTTP client for a single Beakon instance.
  *
- * Every connection is TLS with [PinningTrustManager] using [pinnedSha256]. The
- * `session` cookie (from login) authenticates the session endpoints; reporting
- * uses the `username`/`secret` headers.
+ * Every connection is TLS. The platform/default trust manager is the default
+ * path: a certificate the device trusts connects with no user interaction.
+ * [pinnedSha256] is used only as an explicit fallback when the platform rejects
+ * the chain (see [PinningTrustManager]). The `session` cookie (from login)
+ * authenticates the session endpoints; reporting uses the `username`/`secret`
+ * headers.
  */
 class BeakonClient(
     baseUrl: String,
@@ -92,10 +94,8 @@ class BeakonClient(
                     else -> LoginResult.ServerError(response.code)
                 }
             }
-        } catch (e: SSLPeerUnverifiedException) {
-            LoginResult.CertificateError("hostname verification failed: ${e.message}")
         } catch (e: SSLException) {
-            LoginResult.CertificateError(e.message ?: "TLS handshake failed")
+            LoginResult.CertificateError(TlsSupport.describeTlsFailure(e))
         } catch (e: IOException) {
             LoginResult.NetworkError(e.message ?: e.javaClass.simpleName)
         }
@@ -113,10 +113,8 @@ class BeakonClient(
                     else -> TokenResult.ServerError(response.code)
                 }
             }
-        } catch (e: SSLPeerUnverifiedException) {
-            TokenResult.CertificateError("hostname verification failed: ${e.message}")
         } catch (e: SSLException) {
-            TokenResult.CertificateError(e.message ?: "TLS handshake failed")
+            TokenResult.CertificateError(TlsSupport.describeTlsFailure(e))
         } catch (e: IOException) {
             TokenResult.NetworkError(e.message ?: e.javaClass.simpleName)
         }
@@ -139,10 +137,8 @@ class BeakonClient(
                     else -> SendResult.ServerError(response.code)
                 }
             }
-        } catch (e: SSLPeerUnverifiedException) {
-            SendResult.CertificateChanged("hostname verification failed: ${e.message}")
         } catch (e: SSLException) {
-            SendResult.CertificateChanged(e.message ?: "TLS handshake failed")
+            SendResult.CertificateChanged(TlsSupport.describeTlsFailure(e))
         } catch (e: IOException) {
             SendResult.NetworkError(e.message ?: e.javaClass.simpleName)
         }
@@ -164,10 +160,8 @@ class BeakonClient(
                     else -> parseLocations(response.body?.string().orEmpty())
                 }
             }
-        } catch (e: SSLPeerUnverifiedException) {
-            LocationsResult.CertificateError("hostname verification failed: ${e.message}")
         } catch (e: SSLException) {
-            LocationsResult.CertificateError(e.message ?: "TLS handshake failed")
+            LocationsResult.CertificateError(TlsSupport.describeTlsFailure(e))
         } catch (e: IOException) {
             LocationsResult.NetworkError(e.message ?: e.javaClass.simpleName)
         } catch (e: Exception) {

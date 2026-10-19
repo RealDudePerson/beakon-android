@@ -4,6 +4,7 @@ import com.beakon.companion.net.BeakonClient
 import com.beakon.companion.net.CertificateProbe
 import com.beakon.companion.net.LocationReport
 import com.beakon.companion.net.LoginResult
+import com.beakon.companion.net.PinningTrustManager
 import com.beakon.companion.net.SendResult
 import com.beakon.companion.net.TokenResult
 import com.beakon.companion.tracking.RateLimitBackoff
@@ -12,7 +13,16 @@ import com.beakon.companion.tracking.TrackingStateStore
 import java.io.File
 import java.net.ServerSocket
 import java.net.Socket
+import java.security.KeyStore
+import java.security.SecureRandom
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -148,7 +158,72 @@ class MockServerIntegrationTest {
         assertTrue("expected a certificate error, got $result", result is LoginResult.CertificateError)
     }
 
+    @Test
+    fun `a platform-trusted chain connects without consulting any fingerprint`() {
+        val port = startServer()
+        // Stand in for the device's platform trust store: a real PKIX
+        // TrustManagerFactory that trusts this server's certificate as an anchor.
+        val platformLike = trustManagerTrusting(loadCertificate("cert.pem"))
+
+        var pinConsulted = false
+        val manager = PinningTrustManager(
+            pinnedSha256 = "AA:BB:CC",
+            delegate = platformLike,
+            fingerprintMatches = { _, _ ->
+                pinConsulted = true
+                true
+            },
+        )
+        val context = SSLContext.getInstance("TLS")
+        context.init(null, arrayOf<X509TrustManager>(manager), SecureRandom())
+        val client = OkHttpClient.Builder()
+            .sslSocketFactory(context.socketFactory, manager)
+            .build()
+
+        client.newCall(Request.Builder().url("https://127.0.0.1:$port/").build()).execute().use { response ->
+            assertEquals("the platform-trusted handshake must succeed", 200, response.code)
+        }
+
+        assertFalse(
+            "the fingerprint must not be consulted when the platform trusts the chain",
+            pinConsulted,
+        )
+    }
+
+    @Test
+    fun `a self-signed certificate with no accepted fingerprint is refused`() {
+        val port = startServer()
+        val client = BeakonClient("https://127.0.0.1:$port", pinnedSha256 = null)
+
+        val result = client.login("demo", "correct-horse")
+
+        assertTrue("expected a certificate error, got $result", result is LoginResult.CertificateError)
+        val message = (result as LoginResult.CertificateError).message
+        assertTrue(
+            "the refusal must name the untrusted chain, was: $message",
+            message.contains("not trusted by this device"),
+        )
+        assertFalse(client.hasSession())
+    }
+
     // --- helpers -----------------------------------------------------------
+
+    private fun loadCertificate(name: String): X509Certificate {
+        val certFile = File(repoRoot, "mock/$name")
+        return certFile.inputStream().use {
+            CertificateFactory.getInstance("X.509").generateCertificate(it) as X509Certificate
+        }
+    }
+
+    private fun trustManagerTrusting(certificate: X509Certificate): X509TrustManager {
+        val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
+            load(null, null)
+            setCertificateEntry("mock", certificate)
+        }
+        val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        factory.init(keyStore)
+        return factory.trustManagers.filterIsInstance<X509TrustManager>().first()
+    }
 
     private fun startServer(
         cert: String = "cert.pem",

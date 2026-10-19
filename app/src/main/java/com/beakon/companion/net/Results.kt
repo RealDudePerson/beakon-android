@@ -59,7 +59,8 @@ fun SendResult.userMessage(): String? = when (this) {
         "Rate limited by the server (429). Backing off before the next report" +
             (retryAfterSeconds?.let { " (server asked to wait ${it}s)" } ?: "") + "."
     is SendResult.CertificateChanged ->
-        "The server certificate changed or could not be verified, so nothing was sent. Re-check the fingerprint in Setup. ($message)"
+        "The server certificate could not be verified, so nothing was sent: $message. " +
+            "Check the certificate in Setup."
     is SendResult.NetworkError ->
         "Cannot reach the instance (no network / timeout / DNS). Check connectivity. ($message)"
     is SendResult.ServerError ->
@@ -76,7 +77,8 @@ fun LoginResult.userMessage(): String? = when (this) {
     LoginResult.Success -> null
     LoginResult.InvalidCredentials -> "Login failed: wrong username or password."
     is LoginResult.CertificateError ->
-        "Could not establish a trusted connection to the instance. Verify the certificate fingerprint. ($message)"
+        "Could not establish a trusted connection to the instance: $message. " +
+            "If you recognize the certificate, you can trust it by fingerprint in Setup."
     is LoginResult.NetworkError -> "Could not reach the instance. Check the URL and your network. ($message)"
     is LoginResult.ServerError -> "The instance returned an unexpected status ($code) during login."
 }
@@ -85,7 +87,9 @@ fun TokenResult.userMessage(): String? = when (this) {
     TokenResult.Success -> null
     TokenResult.AuthRejected ->
         "The server rejected the token update (401). Your session may have expired — sign in again."
-    is TokenResult.CertificateError -> "TLS problem while updating the API token. ($message)"
+    is TokenResult.CertificateError ->
+        "TLS problem while updating the API token: $message. " +
+            "If you recognize the certificate, you can trust it by fingerprint in Setup."
     is TokenResult.NetworkError -> "Could not reach the instance to update the API token. ($message)"
     is TokenResult.ServerError -> "The instance returned an unexpected status ($code) while updating the API token."
 }
@@ -93,7 +97,8 @@ fun TokenResult.userMessage(): String? = when (this) {
 fun LocationsResult.userMessage(): String? = when (this) {
     is LocationsResult.Success -> null
     LocationsResult.AuthRequired -> "Your session expired. Sign in again from Setup to see history."
-    is LocationsResult.CertificateError -> "Certificate changed or could not be verified while loading history. ($message)"
+    is LocationsResult.CertificateError ->
+        "Certificate could not be verified while loading history: $message. Check the certificate in Setup."
     is LocationsResult.NetworkError -> "Could not load history: no network / timeout. ($message)"
     is LocationsResult.ParseError ->
         "Could not load history: the server's response could not be read. ($message)"
