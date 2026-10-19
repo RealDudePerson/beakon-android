@@ -3,7 +3,7 @@
 
     <!--
       Permissions are limited to exactly the set required by the spec.
-      RECEIVE_BOOT_COMPLETED is deliberately absent: auto-resume is out of scope.
+      RECEIVE_BOOT_COMPLETED powers the opt-in "Start tracking at boot" setting.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".BeakonApplication"
@@ -38,6 +39,20 @@
             android:name=".tracking.LocationTrackingService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!--
+          System broadcast, so exported="true" is required and correct. The
+          filter lists BOOT_COMPLETED only. Not directBootAware: credentials are
+          in credential-encrypted storage, unavailable before first unlock.
+        -->
+        <receiver
+            android:name=".tracking.BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

@@ -284,6 +284,13 @@ private class FakeState(
     private val _trackingStatus = MutableStateFlow(TrackingStatus())
     override val trackingStatus: StateFlow<TrackingStatus> = _trackingStatus
 
+    private val _startTrackingOnBoot = MutableStateFlow(false)
+    override val startTrackingOnBoot: StateFlow<Boolean> = _startTrackingOnBoot
+
+    override fun setStartTrackingOnBoot(on: Boolean) {
+        _startTrackingOnBoot.value = on
+    }
+
     private val pins = mutableMapOf<String, String>()
     var storedSecret: String? = null
         private set

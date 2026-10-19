@@ -41,6 +41,7 @@ fun StatusScreen(
 ) {
     val context = LocalContext.current
     val status by viewModel.status.collectAsState()
+    val startTrackingOnBoot by viewModel.startTrackingOnBoot.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
 
     // Permission chain: foreground -> background -> notifications -> start.
@@ -178,6 +179,28 @@ fun StatusScreen(
                         )
                     }
                 }
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Start tracking at boot", style = MaterialTheme.typography.titleMedium)
+                    Switch(
+                        checked = startTrackingOnBoot,
+                        onCheckedChange = { viewModel.setStartTrackingOnBoot(it) },
+                    )
+                }
+                Text(
+                    "When on, Beakon resumes reporting automatically after the device " +
+                        "restarts, provided it is signed in. Off by default; nothing is " +
+                        "started at boot unless you turn this on.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
 

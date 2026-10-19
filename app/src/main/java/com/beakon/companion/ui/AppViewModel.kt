@@ -48,6 +48,9 @@ interface AppViewModelState {
     var instanceUrl: String?
     var username: String?
     var intervalSeconds: Int
+    /** Storage-backed view of the "start tracking at boot" setting. */
+    val startTrackingOnBoot: StateFlow<Boolean>
+    fun setStartTrackingOnBoot(on: Boolean)
     fun clearSession()
     fun pinFor(host: String): String?
     fun storePin(host: String, sha256: String)
@@ -104,9 +107,19 @@ class AppViewModel @JvmOverloads constructor(
     var intervalSeconds by mutableIntStateOf(state.intervalSeconds)
         private set
 
+    /**
+     * Collected directly from the preference-backed flow, so the toggle always
+     * shows the persisted value rather than a local copy that could drift.
+     */
+    val startTrackingOnBoot: StateFlow<Boolean> = state.startTrackingOnBoot
+
     fun setInterval(seconds: Int) {
         state.intervalSeconds = seconds
         intervalSeconds = state.intervalSeconds
+    }
+
+    fun setStartTrackingOnBoot(on: Boolean) {
+        state.setStartTrackingOnBoot(on)
     }
 
     fun onUrlChanged(value: String) {
@@ -317,6 +330,13 @@ private class AndroidAppViewModelState(
         set(value) {
             container.preferences.intervalSeconds = value
         }
+
+    override val startTrackingOnBoot: StateFlow<Boolean> =
+        container.preferences.startTrackingOnBootFlow
+
+    override fun setStartTrackingOnBoot(on: Boolean) {
+        container.preferences.startTrackingOnBoot = on
+    }
 
     override fun clearSession() = container.preferences.clearSession()
 
