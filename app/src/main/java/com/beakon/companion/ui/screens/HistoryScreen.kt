@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -46,19 +47,71 @@ fun HistoryScreen(viewModel: AppViewModel) {
             }
         }
 
-        viewModel.historyMessage?.let { message ->
-            Text(message, color = MaterialTheme.colorScheme.error)
-        }
+        // The loading flag and the error message are read inside their own small
+        // composables. That scopes each read to that composable, so flipping the
+        // loading flag no longer recomposes HistoryScreen (and therefore does not
+        // invalidate the list below). Passing an accessor rather than the whole
+        // (unstable) AppViewModel keeps the unstable parameter out of the API.
+        HistoryMessage { viewModel.historyMessage }
+        HistoryProgress { viewModel.historyLoading }
 
-        if (viewModel.historyLoading) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
+        HistoryList(viewModel.history)
+    }
+}
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(viewModel.history.asReversed()) { point ->
-                HistoryRow(point)
-            }
+@Composable
+private fun HistoryMessage(message: () -> String?) {
+    message()?.let { text ->
+        Text(text, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun HistoryProgress(loading: () -> Boolean) {
+    if (loading()) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/**
+ * Newest-first history list.
+ *
+ * The reverse order and the per-item keys are computed once per [history] value
+ * (inside [remember]) instead of on every composition. `asReversed()` is
+ * deliberately not used: an index loop avoids allocating the extra list wrapper
+ * that the old `items(viewModel.history.asReversed())` created each composition.
+ * Each row is keyed by its content, so item identity is stable across a refresh
+ * that returns the same points rather than being positional.
+ */
+@Composable
+private fun HistoryList(history: List<LocationDto>) {
+    val rows = remember(history) { newestFirstKeyed(history) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(rows, key = { it.key }) { row ->
+            HistoryRow(row.point)
         }
+    }
+}
+
+/** A history row paired with the stable key used for its item identity. */
+internal data class KeyedLocation(val key: String, val point: LocationDto)
+
+/**
+ * Returns [history] newest-first, each point paired with a content-based key.
+ *
+ * A [LocationDto] carries no field the server guarantees to be unique, so a
+ * point whose timestamp+coordinates repeat within the same list is given an
+ * occurrence suffix. That preserves LazyColumn's "keys must be unique" contract
+ * while still keying on content rather than on position.
+ */
+internal fun newestFirstKeyed(history: List<LocationDto>): List<KeyedLocation> {
+    val seen = HashMap<String, Int>()
+    return List(history.size) { index ->
+        val point = history[history.size - 1 - index]
+        val base = "${point.timestamp.orEmpty()}|${point.lat}|${point.lon}"
+        val occurrence = seen.getOrDefault(base, 0)
+        seen[base] = occurrence + 1
+        KeyedLocation(if (occurrence == 0) base else "$base#$occurrence", point)
     }
 }
 

@@ -44,11 +44,35 @@ Requires JDK 17+ and the Android SDK (`platforms;android-35`,
 ```bash
 export ANDROID_HOME="$HOME/android-sdk"
 ./gradlew assembleDebug      # -> app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease    # -> app/build/outputs/apk/release/app-release.apk
 ./gradlew lint
 ./gradlew test               # JVM unit tests, including the local-mock integration test
 ```
 
 The Gradle wrapper is committed, so no system Gradle is required.
+
+### Use the release build for everyday use
+
+The debug APK is slow on purpose: it is `debuggable=true`, so ART skips its
+optimizing compiler, and it includes the Compose UI inspector
+(`debugImplementation(ui-tooling)`). The **release** build is the one to install
+if the app feels sluggish. It is `debuggable=false`, leaves the inspector out,
+and is therefore substantially smaller.
+
+So that it can be installed **over the existing app without an uninstall** (which
+would wipe the saved login, interval, accuracy threshold and fingerprint pins),
+the release build is deliberately **signed with the debug keystore**
+(`signingConfig = signingConfigs.getByName("debug")`). It is the same
+application id and signing key as the debug APK, so installing it is a normal
+update. This is not a store-release key and must not be used for distribution —
+it exists so the owner can move from the slow debug build to the fast release
+build without losing settings.
+
+Minification (`isMinifyEnabled`) is **off** in the release build. This app uses
+kotlinx.serialization and Compose, where a missing keep rule shows up as a
+runtime crash rather than a build error, and there is no device here to catch
+one; the optimizing compiler, `debuggable=false` and the dropped inspector are
+the wins, without taking on R8 keep-rule risk.
 
 ## Local mock server
 

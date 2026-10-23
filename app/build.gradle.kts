@@ -19,6 +19,16 @@ android {
 
     buildTypes {
         release {
+            // Release-optimized build (debuggable=false, no Compose ui-tooling,
+            // ART runs its optimizing compiler) signed with the *debug* keystore
+            // so it can be installed over the existing debug build without an
+            // uninstall, which would lose the owner's settings. Same applicationId
+            // and signing key as the debug APK, so it is a plain update.
+            signingConfig = signingConfigs.getByName("debug")
+            // Minification stays off on purpose: this app uses kotlinx.serialization
+            // and Compose, where a missing keep rule is a runtime crash rather than
+            // a build error. There is no device here to catch such a crash, so we
+            // do not enable R8. See README.
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
