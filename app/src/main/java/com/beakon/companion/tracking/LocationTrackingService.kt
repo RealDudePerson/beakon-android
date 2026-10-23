@@ -15,6 +15,7 @@ import com.beakon.companion.net.BeakonUrl
 import com.beakon.companion.net.LocationReport
 import com.beakon.companion.net.SendResult
 import com.beakon.companion.net.userMessage
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -117,6 +118,23 @@ class LocationTrackingService : Service() {
                 isCharging = battery?.charging,
             )
         }
+
+        // Accuracy gate. A fix that reports an accuracy worse than the user's
+        // threshold is held back rather than sent, so the map keeps the last
+        // good position. A null accuracy is pushed: the app cannot judge it, and
+        // dropping it would silently remove the user from the map (see
+        // [AccuracyGate]). Held fixes are never silent: the notification carries
+        // the numbers and the tracking state records them for the Status screen.
+        val accuracy = report?.acc
+        val thresholdM = container.preferences.accuracyThresholdM
+        if (accuracy != null && !AccuracyGate.shouldPush(accuracy, thresholdM)) {
+            container.trackingState.recordFix()
+            container.trackingState.recordAccuracyHold(accuracy.roundToInt(), thresholdM)
+            updateNotification(AccuracyGate.holdMessage(accuracy, thresholdM))
+            return
+        }
+        // This fix is being pushed, so any previous hold no longer applies.
+        if (report != null) container.trackingState.clearAccuracyHold()
 
         val coordinator = ReportCoordinator(
             client = client,

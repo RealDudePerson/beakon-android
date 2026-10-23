@@ -69,6 +69,20 @@ class AppPreferences(
             .putInt(KEY_INTERVAL, value.coerceAtLeast(MIN_INTERVAL_SECONDS))
             .apply()
 
+    /**
+     * Only fixes at least this accurate (smaller metres is better) are pushed.
+     * Defaults to [DEFAULT_ACCURACY_THRESHOLD_M] and is clamped to
+     * [[MIN_ACCURACY_THRESHOLD_M], [MAX_ACCURACY_THRESHOLD_M]].
+     */
+    var accuracyThresholdM: Int
+        get() = prefs.getInt(KEY_ACCURACY_THRESHOLD, DEFAULT_ACCURACY_THRESHOLD_M)
+        set(value) = prefs.edit()
+            .putInt(
+                KEY_ACCURACY_THRESHOLD,
+                value.coerceIn(MIN_ACCURACY_THRESHOLD_M, MAX_ACCURACY_THRESHOLD_M),
+            )
+            .apply()
+
     /** Removes credentials-related state on logout. Keeps the URL/username prefill. */
     fun clearSession() {
         prefs.edit().putBoolean(KEY_TRACKING, false).apply()
@@ -84,11 +98,28 @@ class AppPreferences(
         const val DEFAULT_INTERVAL_SECONDS = 90
         const val MIN_INTERVAL_SECONDS = 60
 
+        /**
+         * Only fixes at least this accurate are pushed. 30 m is a common
+         * "good enough" consumer-GPS fix; coarser fixes are held so the map keeps
+         * showing the last good position.
+         */
+        const val DEFAULT_ACCURACY_THRESHOLD_M = 30
+
+        /**
+         * 5 m is stricter than consumer GPS realistically achieves, so it is the
+         * strictest floor worth offering. 500 m is far beyond a usable fix and
+         * caps an accidental or absurd value; the UI choices (10/20/30/50/100)
+         * all sit inside the range.
+         */
+        const val MIN_ACCURACY_THRESHOLD_M = 5
+        const val MAX_ACCURACY_THRESHOLD_M = 500
+
         private const val FILE_NAME = "beakon_prefs"
         private const val KEY_URL = "instance_url"
         private const val KEY_USERNAME = "username"
         private const val KEY_TRACKING = "tracking_enabled"
         private const val KEY_INTERVAL = "interval_seconds"
+        private const val KEY_ACCURACY_THRESHOLD = "accuracy_threshold_m"
         private const val KEY_BOOT_START = "start_tracking_on_boot"
     }
 }

@@ -18,6 +18,14 @@ data class TrackingStatus(
     val batteryPercent: Int? = null,
     val charging: Boolean? = null,
     val backingOff: Boolean = false,
+    /**
+     * Accuracy (metres) of the most recent fix that was held back by the
+     * accuracy gate, or null when nothing is currently held. Shown on the Status
+     * screen so a stale map is always explained — never fail silently.
+     */
+    val lastHeldAccuracyM: Int? = null,
+    /** The threshold in force when [lastHeldAccuracyM] was held. */
+    val lastHeldThresholdM: Int? = null,
 )
 
 /**
@@ -62,6 +70,24 @@ class TrackingStateStore(
                 lastSendSucceeded = false,
             )
         }
+    }
+
+    /**
+     * Records that the current fix was held back by the accuracy gate, with the
+     * numbers, so the Status screen can explain a stale map. Never fail silently.
+     */
+    fun recordAccuracyHold(accuracyM: Int, thresholdM: Int) {
+        _status.value = _status.value.copy(
+            lastHeldAccuracyM = accuracyM,
+            lastHeldThresholdM = thresholdM,
+        )
+    }
+
+    /** Clears a previous hold once a fix is pushed again. */
+    fun clearAccuracyHold() {
+        val current = _status.value
+        if (current.lastHeldAccuracyM == null && current.lastHeldThresholdM == null) return
+        _status.value = current.copy(lastHeldAccuracyM = null, lastHeldThresholdM = null)
     }
 
     fun clearError() {

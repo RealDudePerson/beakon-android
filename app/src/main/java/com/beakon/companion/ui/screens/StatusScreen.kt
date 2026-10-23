@@ -156,6 +156,18 @@ fun StatusScreen(
                         else -> "${status.batteryPercent}%"
                     },
                 )
+                status.lastHeldAccuracyM?.let { heldM ->
+                    val thresholdM = status.lastHeldThresholdM
+                    Text(
+                        if (thresholdM != null) {
+                            "Last fix held: accurate to $heldM m, threshold $thresholdM m. " +
+                                "The map still shows the last good position."
+                        } else {
+                            "Last fix held: accurate to $heldM m."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 status.lastError?.let { error ->
                     Text(error, color = MaterialTheme.colorScheme.error)
                 }
@@ -176,6 +188,27 @@ fun StatusScreen(
                             selected = viewModel.intervalSeconds == seconds,
                             onClick = { viewModel.setInterval(seconds) },
                             label = { Text("${seconds}s") },
+                        )
+                    }
+                }
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Accuracy threshold", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Fixes less accurate than this are held back, so the map keeps showing the " +
+                        "last good position. A stricter threshold is more precise but updates less " +
+                        "often — especially indoors. Default 30 m.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10, 20, 30, 50, 100).forEach { meters ->
+                        FilterChip(
+                            selected = viewModel.accuracyThresholdM == meters,
+                            onClick = { viewModel.setAccuracyThreshold(meters) },
+                            label = { Text("${meters} m") },
                         )
                     }
                 }

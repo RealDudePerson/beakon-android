@@ -48,6 +48,7 @@ interface AppViewModelState {
     var instanceUrl: String?
     var username: String?
     var intervalSeconds: Int
+    var accuracyThresholdM: Int
     /** Storage-backed view of the "start tracking at boot" setting. */
     val startTrackingOnBoot: StateFlow<Boolean>
     fun setStartTrackingOnBoot(on: Boolean)
@@ -116,6 +117,9 @@ class AppViewModel @JvmOverloads constructor(
     var intervalSeconds by mutableIntStateOf(state.intervalSeconds)
         private set
 
+    var accuracyThresholdM by mutableIntStateOf(state.accuracyThresholdM)
+        private set
+
     /**
      * Collected directly from the preference-backed flow, so the toggle always
      * shows the persisted value rather than a local copy that could drift.
@@ -125,6 +129,11 @@ class AppViewModel @JvmOverloads constructor(
     fun setInterval(seconds: Int) {
         state.intervalSeconds = seconds
         intervalSeconds = state.intervalSeconds
+    }
+
+    fun setAccuracyThreshold(m: Int) {
+        state.accuracyThresholdM = m
+        accuracyThresholdM = state.accuracyThresholdM
     }
 
     fun setStartTrackingOnBoot(on: Boolean) {
@@ -372,6 +381,12 @@ private class AndroidAppViewModelState(
         get() = container.preferences.intervalSeconds
         set(value) {
             container.preferences.intervalSeconds = value
+        }
+
+    override var accuracyThresholdM: Int
+        get() = container.preferences.accuracyThresholdM
+        set(value) {
+            container.preferences.accuracyThresholdM = value
         }
 
     override val startTrackingOnBoot: StateFlow<Boolean> =

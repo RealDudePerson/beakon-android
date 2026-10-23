@@ -1,5 +1,6 @@
 package com.beakon.companion.data
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,5 +46,51 @@ class AppPreferencesTest {
         observed += prefs.startTrackingOnBootFlow.value
 
         assertTrue("flow must start off, then on, then off: $observed", observed == listOf(false, true, false))
+    }
+
+    // --- accuracy threshold -------------------------------------------------
+
+    @Test
+    fun `accuracy threshold defaults to 30 when never set`() {
+        val prefs = AppPreferences(FakeSharedPreferences())
+
+        assertEquals(30, AppPreferences.DEFAULT_ACCURACY_THRESHOLD_M)
+        assertEquals(30, prefs.accuracyThresholdM)
+    }
+
+    @Test
+    fun `accuracy threshold round-trips through storage`() {
+        val prefs = AppPreferences(FakeSharedPreferences())
+
+        prefs.accuracyThresholdM = 50
+        assertEquals(50, prefs.accuracyThresholdM)
+
+        prefs.accuracyThresholdM = 10
+        assertEquals(10, prefs.accuracyThresholdM)
+    }
+
+    @Test
+    fun `accuracy threshold persists under the documented key`() {
+        val fake = FakeSharedPreferences()
+        val prefs = AppPreferences(fake)
+
+        prefs.accuracyThresholdM = 50
+
+        assertEquals(50, fake.getAll()["accuracy_threshold_m"])
+    }
+
+    @Test
+    fun `accuracy threshold is coerced into the supported range`() {
+        val prefs = AppPreferences(FakeSharedPreferences())
+
+        prefs.accuracyThresholdM = 1
+        assertEquals(AppPreferences.MIN_ACCURACY_THRESHOLD_M, prefs.accuracyThresholdM)
+
+        prefs.accuracyThresholdM = 100_000
+        assertEquals(AppPreferences.MAX_ACCURACY_THRESHOLD_M, prefs.accuracyThresholdM)
+
+        // A value inside the range is stored unchanged.
+        prefs.accuracyThresholdM = 30
+        assertEquals(30, prefs.accuracyThresholdM)
     }
 }

@@ -410,6 +410,7 @@ private class FakeState(
     override var instanceUrl: String? = null,
     override var username: String? = null,
     override var intervalSeconds: Int = 90,
+    override var accuracyThresholdM: Int = 30,
 ) : AppViewModelState {
 
     private val _trackingStatus = MutableStateFlow(TrackingStatus())
