@@ -62,6 +62,16 @@ android {
     }
 }
 
+// Emit Compose compiler metrics/reports on every build. These are diagnostic only
+// (no runtime effect, no APK content) and are the evidence for recomposition work:
+// build/compose_reports/<variant>-composables.txt says which composables can skip
+// recomposition, and <variant>-classes.txt says which classes the compiler treats
+// as unstable (unstable parameters are why a composable cannot skip).
+composeCompiler {
+    reportsDestination = layout.buildDirectory.dir("compose_reports")
+    metricsDestination = layout.buildDirectory.dir("compose_metrics")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
