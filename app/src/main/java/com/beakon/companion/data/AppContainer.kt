@@ -8,5 +8,8 @@ class AppContainer(context: Context) {
     val preferences = AppPreferences(context)
     val fingerprints = FingerprintStore(context)
     val secrets = SecureSecretStore(context)
-    val trackingState = TrackingStateStore()
+    val trackingState = TrackingStateStore(
+        initialError = preferences.lastTrackingError,
+        persistError = { message -> preferences.lastTrackingError = message },
+    )
 }

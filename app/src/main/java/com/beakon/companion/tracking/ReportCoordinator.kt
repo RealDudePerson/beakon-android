@@ -28,7 +28,7 @@ class ReportCoordinator(
         }
         state.recordFix(clock())
 
-        if (!backoff.shouldAttempt()) {
+        if (!backoff.shouldAttemptAt(clock())) {
             val result = SendResult.SkippedByBackoff
             state.recordResult(result, clock())
             return result

@@ -32,6 +32,9 @@ fun MapScreen(viewModel: AppViewModel) {
     LaunchedEffect(Unit) { viewModel.loadHistory() }
 
     val points = viewModel.history
+    // Plain holder (not Compose state): the camera must be centred once, then
+    // left alone so a refresh cannot snap it away from where the user panned.
+    val cameraState = remember { MapCameraState() }
     val mapView = remember {
         MapView(context).apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -70,15 +73,20 @@ fun MapScreen(viewModel: AppViewModel) {
                             outlinePaint.strokeWidth = 8f
                         },
                     )
-                    val latest = geoPoints.last()
+                    // The API's `latest` field wins over list order.
+                    val latest = latestMarkerPoint(viewModel.latest, points)
+                    val latestGeo = latest?.let { GeoPoint(it.lat, it.lon) } ?: geoPoints.last()
                     view.overlays.add(
                         Marker(view).apply {
-                            position = latest
+                            position = latestGeo
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             title = "Latest"
                         },
                     )
-                    view.controller.setCenter(latest)
+                    if (MapCamera.shouldCentre(cameraState.hasCentred, geoPoints.isNotEmpty())) {
+                        view.controller.setCenter(latestGeo)
+                        cameraState.hasCentred = true
+                    }
                 }
                 view.invalidate()
             },
@@ -86,6 +94,18 @@ fun MapScreen(viewModel: AppViewModel) {
 
         if (viewModel.historyLoading) {
             CircularProgressIndicator(Modifier.align(Alignment.Center))
+        }
+
+        if (emptyPointsState(points, viewModel.historyLoading, viewModel.historyMessage) ==
+            PointsEmptyState.NoPoints
+        ) {
+            Text(
+                "No points yet. Location points will appear here after Beakon reports one.",
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(16.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         viewModel.historyMessage?.let { message ->

@@ -11,6 +11,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,6 +40,16 @@ fun BeakonApp(viewModel: AppViewModel = viewModel()) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val loggedIn = viewModel.loggedIn
+
+    // Logout must not strand the user on Status (where the bottom bar is gone).
+    // Navigating here also clears the signed-in back stack.
+    LaunchedEffect(loggedIn, currentRoute) {
+        if (NavigationDecision.shouldNavigateToSetup(loggedIn, currentRoute)) {
+            navController.navigate("setup") {
+                popUpTo(navController.graph.id) { inclusive = true }
+            }
+        }
+    }
 
     Scaffold(
         bottomBar = {

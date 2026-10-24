@@ -3,6 +3,7 @@ package com.beakon.companion
 import android.app.Application
 import android.content.Context
 import com.beakon.companion.data.AppContainer
+import com.beakon.companion.tracking.LocationTrackingService
 import com.beakon.companion.tracking.NotificationHelper
 import org.osmdroid.config.Configuration
 
@@ -22,8 +23,13 @@ class BeakonApplication : Application() {
         Configuration.getInstance().userAgentValue = "$packageName/${BuildConfig.VERSION_NAME}"
 
         // Restore the tracking toggle across process death. The service is never
-        // started automatically; the user re-enables it from the Status screen.
-        container.trackingState.setTracking(container.preferences.trackingEnabled)
+        // started automatically; if the persisted intent says "on" but the
+        // service is not running, the Status screen shows an explicit resume
+        // state instead of claiming tracking is active.
+        container.trackingState.setTrackingHealth(
+            trackingEnabled = container.preferences.trackingEnabled,
+            serviceRunning = LocationTrackingService.isRunning,
+        )
 
         NotificationHelper.createChannel(this)
     }

@@ -2,6 +2,7 @@ package com.beakon.companion.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -92,5 +93,40 @@ class AppPreferencesTest {
         // A value inside the range is stored unchanged.
         prefs.accuracyThresholdM = 30
         assertEquals(30, prefs.accuracyThresholdM)
+    }
+
+    // --- P2-7: last tracking-impairing error --------------------------------
+
+    @Test
+    fun `the last tracking error round-trips through storage`() {
+        val prefs = AppPreferences(FakeSharedPreferences())
+
+        assertNull("no error is recorded until one happens", prefs.lastTrackingError)
+
+        prefs.lastTrackingError = "Tracking could not start: permission missing"
+        assertEquals("Tracking could not start: permission missing", prefs.lastTrackingError)
+
+        prefs.lastTrackingError = null
+        assertNull(prefs.lastTrackingError)
+    }
+
+    @Test
+    fun `the last tracking error is persisted under its documented key`() {
+        val fake = FakeSharedPreferences()
+        val prefs = AppPreferences(fake)
+
+        prefs.lastTrackingError = "boom"
+
+        assertEquals("boom", fake.getAll()["last_tracking_error"])
+    }
+
+    @Test
+    fun `logout clears a stale tracking error`() {
+        val prefs = AppPreferences(FakeSharedPreferences())
+        prefs.lastTrackingError = "boom"
+
+        prefs.clearSession()
+
+        assertNull("a signed-out app must not show an error from the old session", prefs.lastTrackingError)
     }
 }

@@ -76,6 +76,9 @@ class AppViewModel @JvmOverloads constructor(
     private val clients: BeakonClientFactory = BeakonClientFactory { url, pin, session ->
         BeakonClient(url, pin, session)
     },
+    /** Injectable clock so the history TTL is testable. */
+    private val now: () -> Long = System::currentTimeMillis,
+    private val historyTtlMs: Long = HISTORY_TTL_MS,
 ) : AndroidViewModel(application) {
 
     val status: StateFlow<TrackingStatus> = state.trackingStatus
@@ -109,10 +112,21 @@ class AppViewModel @JvmOverloads constructor(
     // History / map.
     var history by mutableStateOf<List<LocationDto>>(emptyList())
         private set
+
+    /**
+     * The server's `latest` point, kept verbatim instead of inferring "latest"
+     * from list order (the server does not promise an order).
+     */
+    var latest by mutableStateOf<LocationDto?>(null)
+        private set
+
     var historyMessage by mutableStateOf<String?>(null)
         private set
     var historyLoading by mutableStateOf(false)
         private set
+
+    /** Start time of the last history attempt, used by the tab-entry TTL. */
+    private var lastHistoryAttemptAt: Long? = null
 
     var intervalSeconds by mutableIntStateOf(state.intervalSeconds)
         private set
@@ -317,10 +331,23 @@ class AppViewModel @JvmOverloads constructor(
         state.clearSecrets()
         loggedIn = false
         history = emptyList()
+        latest = null
         historyMessage = null
+        // A later sign-in must fetch immediately rather than inherit the TTL.
+        lastHistoryAttemptAt = null
     }
 
-    fun loadHistory() {
+    /**
+     * Loads history at most once per [HISTORY_TTL_MS].
+     *
+     * The History and Map screens call this on every tab entry. Without the TTL
+     * each tab switch re-requested the same data from the server. [force] is for
+     * the explicit refresh button.
+     */
+    fun loadHistory(force: Boolean = false) {
+        if (historyLoading) return
+        if (!force && !historyIsStale()) return
+
         val url = state.instanceUrl
         if (url == null) {
             historyMessage = "Not signed in. Complete Setup first."
@@ -333,6 +360,9 @@ class AppViewModel @JvmOverloads constructor(
         }
         historyLoading = true
         historyMessage = null
+        // Record the attempt up front so a slow request cannot be re-triggered
+        // and a failed attempt is not retried on every tab switch either.
+        lastHistoryAttemptAt = now()
         viewModelScope.launch {
             val client = clients.create(url, state.pinFor(host), state.session())
             // Blocking network call: never on the main thread.
@@ -342,6 +372,7 @@ class AppViewModel @JvmOverloads constructor(
                 when (result) {
                     is LocationsResult.Success -> {
                         history = result.locations
+                        latest = result.latest
                         historyMessage = null
                     }
                     else -> historyMessage = result.userMessage()
@@ -350,10 +381,24 @@ class AppViewModel @JvmOverloads constructor(
         }
     }
 
+    private fun historyIsStale(): Boolean {
+        val last = lastHistoryAttemptAt ?: return true
+        return now() - last >= historyTtlMs
+    }
+
     private fun generateSecret(): String {
         val bytes = ByteArray(32)
         SecureRandom().nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    companion object {
+        /**
+         * How long a successful/attempted history fetch is reused for tab
+         * entries. Under the 90 s reporting cadence, a minute is enough to stop
+         * tab-switch storms while still showing new points promptly.
+         */
+        const val HISTORY_TTL_MS = 60_000L
     }
 }
 

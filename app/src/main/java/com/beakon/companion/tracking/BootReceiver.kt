@@ -40,11 +40,12 @@ class BootReceiver : BroadcastReceiver() {
         } catch (error: RuntimeException) {
             // The service could not even be requested (e.g. a background-start
             // restriction). Tell the user instead of leaving them with nothing.
-            NotificationHelper.showError(
-                context,
-                "Tracking did not resume after the reboot: " +
-                    "${error.message ?: "unknown error"}. Open Beakon to start it.",
-            )
+            val message = "Tracking did not resume after the reboot: " +
+                "${error.message ?: "unknown error"}. Open Beakon to start it."
+            // Persist it too: the notification is dropped when POST_NOTIFICATIONS
+            // is denied, so the Status screen must still explain it at app start.
+            container.trackingState.recordTickError(message)
+            NotificationHelper.showError(context, message)
         }
     }
 }

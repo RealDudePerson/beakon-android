@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import com.beakon.companion.BeakonApplication
 import com.beakon.companion.data.AppContainer
@@ -14,15 +15,11 @@ import com.beakon.companion.net.BeakonClient
 import com.beakon.companion.net.BeakonUrl
 import com.beakon.companion.net.LocationReport
 import com.beakon.companion.net.SendResult
-import com.beakon.companion.net.userMessage
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -48,7 +45,9 @@ class LocationTrackingService : Service() {
     override fun onCreate() {
         super.onCreate()
         container = (application as BeakonApplication).container
-        locationSource = LocationSourceFactory.create(this)
+        locationSource = LocationSourceFactory.create(this) {
+            container.preferences.intervalSeconds
+        }
         startForegroundSafely("Preparing to report location…")
     }
 
@@ -64,25 +63,42 @@ class LocationTrackingService : Service() {
     override fun onDestroy() {
         loopJob?.cancel()
         scope.cancel()
+        isRunning = false
+        if (::container.isInitialized) {
+            // If the service goes away while tracking was still enabled (system
+            // stop, fatal error elsewhere), the UI must not keep claiming it is on.
+            container.trackingState.setTrackingHealth(
+                trackingEnabled = container.preferences.trackingEnabled,
+                serviceRunning = false,
+            )
+        }
         super.onDestroy()
     }
 
     private fun startTracking() {
         if (loopJob?.isActive == true) return
-        container.trackingState.setTracking(true)
+        isRunning = true
+        container.trackingState.setTrackingHealth(trackingEnabled = true, serviceRunning = true)
         container.preferences.trackingEnabled = true
         loopJob = scope.launch {
-            while (isActive) {
-                runTick()
-                delay(container.preferences.intervalSeconds * 1000L)
-            }
+            TickLoop.run(
+                intervalMs = container.preferences.intervalSeconds * 1000L,
+                tick = { runTick() },
+                onError = { error ->
+                    val message =
+                        "Tracking tick failed: ${error.message ?: error.javaClass.simpleName}"
+                    container.trackingState.recordTickError(message)
+                    updateNotification(message)
+                },
+            )
         }
     }
 
     private fun stopTracking() {
         loopJob?.cancel()
         loopJob = null
-        container.trackingState.setTracking(false)
+        isRunning = false
+        container.trackingState.setTrackingHealth(trackingEnabled = false, serviceRunning = false)
         container.preferences.trackingEnabled = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -108,43 +124,69 @@ class LocationTrackingService : Service() {
         val battery = BatteryReader.read(this)
         container.trackingState.recordBattery(battery?.percent, battery?.charging)
 
-        val location = locationSource.currentLocation()
-        val report = location?.let {
-            LocationReport(
-                lat = it.latitude,
-                lon = it.longitude,
-                acc = if (it.hasAccuracy()) it.accuracy.toDouble() else null,
-                batt = battery?.percent,
-                isCharging = battery?.charging,
+        // A partial wake lock keeps the CPU awake for this tick so location
+        // acquisition and the HTTPS POST are not suspended mid-flight. It is
+        // acquired immediately before location acquisition and released in
+        // `finally`, including on failure. It does not change the 90 s cadence
+        // and it cannot force a tick during deep Doze (see README).
+        withWakeLock(
+            acquire = { acquireWakeLock() },
+            release = { lock -> if (lock.isHeld) lock.release() },
+        ) {
+            val location = locationSource.currentLocation()
+            val report = location?.let {
+                LocationReport(
+                    lat = it.latitude,
+                    lon = it.longitude,
+                    acc = if (it.hasAccuracy()) it.accuracy.toDouble() else null,
+                    batt = battery?.percent,
+                    isCharging = battery?.charging,
+                )
+            }
+
+            // Accuracy gate. A fix that reports an accuracy worse than the user's
+            // threshold is held back rather than sent, so the map keeps the last
+            // good position. A null accuracy is pushed: the app cannot judge it, and
+            // dropping it would silently remove the user from the map (see
+            // [AccuracyGate]). Held fixes are never silent: the notification carries
+            // the numbers and the tracking state records them for the Status screen.
+            val accuracy = report?.acc
+            val thresholdM = container.preferences.accuracyThresholdM
+            when (val action = TickWiring.fixAction(accuracy, thresholdM)) {
+                is TickWiring.FixAction.Hold -> {
+                    TickWiring.recordHeldFix(
+                        recordFix = { container.trackingState.recordFix() },
+                        recordHold = {
+                            container.trackingState.recordAccuracyHold(action.accuracyM, action.thresholdM)
+                        },
+                    )
+                    updateNotification(action.notification)
+                    return@withWakeLock
+                }
+                TickWiring.FixAction.Report -> Unit
+            }
+            // This fix is being pushed, so any previous hold no longer applies.
+            if (report != null) container.trackingState.clearAccuracyHold()
+
+            val coordinator = ReportCoordinator(
+                client = client,
+                username = username,
+                secret = secret,
+                state = container.trackingState,
+                backoff = backoff,
             )
+            val result = coordinator.report(report)
+            updateNotification(TickWiring.notificationText(result, report != null))
         }
+    }
 
-        // Accuracy gate. A fix that reports an accuracy worse than the user's
-        // threshold is held back rather than sent, so the map keeps the last
-        // good position. A null accuracy is pushed: the app cannot judge it, and
-        // dropping it would silently remove the user from the map (see
-        // [AccuracyGate]). Held fixes are never silent: the notification carries
-        // the numbers and the tracking state records them for the Status screen.
-        val accuracy = report?.acc
-        val thresholdM = container.preferences.accuracyThresholdM
-        if (accuracy != null && !AccuracyGate.shouldPush(accuracy, thresholdM)) {
-            container.trackingState.recordFix()
-            container.trackingState.recordAccuracyHold(accuracy.roundToInt(), thresholdM)
-            updateNotification(AccuracyGate.holdMessage(accuracy, thresholdM))
-            return
+    private fun acquireWakeLock(): PowerManager.WakeLock? {
+        val power = getSystemService(PowerManager::class.java) ?: return null
+        return power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+            setReferenceCounted(false)
+            // Safety timeout: even if the tick wedges, the lock self-releases.
+            acquire(WAKE_LOCK_TIMEOUT_MS)
         }
-        // This fix is being pushed, so any previous hold no longer applies.
-        if (report != null) container.trackingState.clearAccuracyHold()
-
-        val coordinator = ReportCoordinator(
-            client = client,
-            username = username,
-            secret = secret,
-            state = container.trackingState,
-            backoff = backoff,
-        )
-        val result = coordinator.report(report)
-        updateNotification(notificationText(result, report != null))
     }
 
     private fun clientFor(url: String, pin: String?): BeakonClient {
@@ -155,11 +197,6 @@ class LocationTrackingService : Service() {
             cachedClient = it
             cachedClientKey = key
         }
-    }
-
-    private fun notificationText(result: SendResult, hadFix: Boolean): String = when (result) {
-        SendResult.Success -> "Location reported successfully."
-        else -> result.userMessage() ?: if (hadFix) "Reporting…" else "Waiting for a fix…"
     }
 
     private fun startForegroundSafely(text: String) {
@@ -177,10 +214,11 @@ class LocationTrackingService : Service() {
         } catch (e: SecurityException) {
             container.trackingState.setTracking(false)
             container.preferences.trackingEnabled = false
-            NotificationHelper.showError(
-                this,
-                "Tracking could not start: ${e.message ?: "location permission missing"}",
-            )
+            val message = "Tracking could not start: ${e.message ?: "location permission missing"}"
+            // Persist before the notification: it may be hidden when the
+            // notification permission was denied, and must still show at start.
+            container.trackingState.recordTickError(message)
+            NotificationHelper.showError(this, message)
             stopSelf()
         }
     }
@@ -193,6 +231,17 @@ class LocationTrackingService : Service() {
     companion object {
         const val ACTION_START = "com.beakon.companion.action.START"
         const val ACTION_STOP = "com.beakon.companion.action.STOP"
+
+        private const val WAKE_LOCK_TAG = "beakon:tracking-tick"
+        private const val WAKE_LOCK_TIMEOUT_MS = 120_000L
+
+        /**
+         * True while this process's tracking service is alive. Used at app start
+         * to reconcile the persisted "tracking on" preference with reality.
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         fun start(context: Context) {
             val intent = Intent(context, LocationTrackingService::class.java).setAction(ACTION_START)

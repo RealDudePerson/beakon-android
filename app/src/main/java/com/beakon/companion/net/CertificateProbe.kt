@@ -2,7 +2,6 @@ package com.beakon.companion.net
 
 import android.annotation.SuppressLint
 import java.io.IOException
-import java.net.InetSocketAddress
 import java.security.SecureRandom
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -10,6 +9,7 @@ import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 
@@ -49,8 +49,7 @@ object CertificateProbe {
         context.init(null, arrayOf<TrustManager>(captureManager), SecureRandom())
 
         try {
-            (context.socketFactory.createSocket() as SSLSocket).use { socket ->
-                socket.connect(InetSocketAddress(host, port), timeoutMs)
+            openSocket(context.socketFactory, host, port, timeoutMs).use { socket ->
                 try {
                     socket.startHandshake()
                 } catch (_: SSLException) {
@@ -80,5 +79,28 @@ object CertificateProbe {
             notAfter = leaf.notAfter.time,
             trustedByPlatform = trustedByPlatform,
         )
+    }
+
+    /**
+     * Opens the probe socket through the **host-aware** factory overload.
+     *
+     * Using `createSocket()` followed by `connect()` connects to an address but
+     * never tells JSSE which hostname is being contacted, so no SNI extension is
+     * sent. On SNI-based virtual hosting the server then presents its default
+     * virtual-host certificate — the wrong certificate to fingerprint or pin.
+     * `createSocket(host, port)` enables SNI (and the endpoint identification
+     * JSSE can derive from the peer host).
+     *
+     * Note that this is still only the diagnostic probe: hostname verification
+     * happens on the real OkHttp request, not here. The [timeoutMs] is applied
+     * as a read/handshake timeout because this overload has no connect timeout.
+     */
+    internal fun openSocket(
+        socketFactory: SSLSocketFactory,
+        host: String,
+        port: Int,
+        timeoutMs: Int,
+    ): SSLSocket = (socketFactory.createSocket(host, port) as SSLSocket).apply {
+        soTimeout = timeoutMs
     }
 }

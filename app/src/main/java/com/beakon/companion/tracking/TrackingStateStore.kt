@@ -26,6 +26,12 @@ data class TrackingStatus(
     val lastHeldAccuracyM: Int? = null,
     /** The threshold in force when [lastHeldAccuracyM] was held. */
     val lastHeldThresholdM: Int? = null,
+    /**
+     * True when tracking is persisted as enabled but the foreground service is
+     * not actually running. The Status screen shows an explicit "tap to resume"
+     * state instead of claiming tracking is on.
+     */
+    val trackingNeedsResume: Boolean = false,
 )
 
 /**
@@ -35,15 +41,48 @@ data class TrackingStatus(
  */
 class TrackingStateStore(
     private val clock: () -> Long = System::currentTimeMillis,
+    initialError: String? = null,
+    /**
+     * Persists the last tracking-impairing error, or clears it on success. The
+     * error is otherwise in-memory only and would vanish on process death — and
+     * the notification that would have carried it may be hidden by a denied
+     * POST_NOTIFICATIONS permission. [com.beakon.companion.data.AppContainer]
+     * wires this to [com.beakon.companion.data.AppPreferences].
+     */
+    private val persistError: (String?) -> Unit = {},
 ) {
 
-    private val _status = MutableStateFlow(TrackingStatus())
+    private val _status = MutableStateFlow(TrackingStatus(lastError = initialError))
     val status: StateFlow<TrackingStatus> = _status.asStateFlow()
 
     private var dayOfYear: Int = dayOfYear(clock())
 
     fun setTracking(on: Boolean) {
-        _status.value = _status.value.copy(tracking = on)
+        _status.value = _status.value.copy(tracking = on, trackingNeedsResume = false)
+    }
+
+    /**
+     * Reconciles persisted intent ("the user wants tracking on") with actual
+     * service liveness. When the two disagree the UI must show the resume state,
+     * never a green toggle.
+     */
+    fun setTrackingHealth(trackingEnabled: Boolean, serviceRunning: Boolean) {
+        _status.value = _status.value.copy(
+            tracking = trackingEnabled && serviceRunning,
+            trackingNeedsResume = TrackingHealthDecision.needsResume(trackingEnabled, serviceRunning),
+        )
+    }
+
+    /**
+     * Records an unexpected failure from a tracking tick so it is never silent.
+     * The tick loop calls this before updating the persistent notification.
+     */
+    fun recordTickError(message: String) {
+        _status.value = _status.value.copy(
+            lastError = message,
+            lastSendSucceeded = false,
+        )
+        persistError(message)
     }
 
     fun recordBattery(percent: Int?, charging: Boolean?) {
@@ -64,11 +103,14 @@ class TrackingStateStore(
                 lastError = null,
                 lastSendSucceeded = true,
             )
+            persistError(null)
         } else {
+            val message = result.userMessage()
             _status.value = current.copy(
-                lastError = result.userMessage(),
+                lastError = message,
                 lastSendSucceeded = false,
             )
+            persistError(message)
         }
     }
 
@@ -92,6 +134,7 @@ class TrackingStateStore(
 
     fun clearError() {
         _status.value = _status.value.copy(lastError = null)
+        persistError(null)
     }
 
     private fun resetDailyIfNeeded(now: Long) {

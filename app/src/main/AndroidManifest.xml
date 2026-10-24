@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Held only for the duration of one tracking tick (location fix + POST). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:name=".BeakonApplication"
@@ -25,9 +27,14 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Beakon">
 
+        <!--
+          singleTask: a notification tap must bring the existing instance to the
+          front instead of stacking another MainActivity. See NotificationHelper.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

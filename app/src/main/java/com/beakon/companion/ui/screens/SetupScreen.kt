@@ -166,6 +166,12 @@ private fun CertificateCard(
     Card {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Server certificate", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "This probe reads the certificate the server presents for this hostname. " +
+                    "Hostname verification happens on the real request (sign-in and location " +
+                    "reports), not in the probe.",
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text("Subject: ${info.subject}", style = MaterialTheme.typography.bodySmall)
             Text("Issuer: ${info.issuer}", style = MaterialTheme.typography.bodySmall)
             Text(

@@ -42,7 +42,7 @@ fun HistoryScreen(viewModel: AppViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text("Recent points", style = MaterialTheme.typography.headlineSmall)
-            IconButton(onClick = { viewModel.loadHistory() }) {
+            IconButton(onClick = { viewModel.loadHistory(force = true) }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
             }
         }
@@ -54,6 +54,11 @@ fun HistoryScreen(viewModel: AppViewModel) {
         // (unstable) AppViewModel keeps the unstable parameter out of the API.
         HistoryMessage { viewModel.historyMessage }
         HistoryProgress { viewModel.historyLoading }
+        HistoryEmpty(
+            points = { viewModel.history },
+            loading = { viewModel.historyLoading },
+            message = { viewModel.historyMessage },
+        )
 
         HistoryList(viewModel.history)
     }
@@ -70,6 +75,25 @@ private fun HistoryMessage(message: () -> String?) {
 private fun HistoryProgress(loading: () -> Boolean) {
     if (loading()) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/**
+ * A successful fetch with zero points is not an error and must not look like a
+ * blank/broken screen. Read through accessors so the loading flag does not
+ * invalidate the whole screen (see the comment in [HistoryScreen]).
+ */
+@Composable
+private fun HistoryEmpty(
+    points: () -> List<LocationDto>,
+    loading: () -> Boolean,
+    message: () -> String?,
+) {
+    if (emptyPointsState(points(), loading(), message()) == PointsEmptyState.NoPoints) {
+        Text(
+            "No points yet. Location points will appear here after Beakon reports one.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

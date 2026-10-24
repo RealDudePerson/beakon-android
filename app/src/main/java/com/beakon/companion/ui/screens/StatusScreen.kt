@@ -130,6 +130,16 @@ fun StatusScreen(
                         },
                     )
                 }
+                if (status.trackingNeedsResume) {
+                    Text(
+                        "Tracking was on but isn't running — tap to resume",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = { requestStart() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Resume tracking")
+                    }
+                }
                 Text(
                     "Beakon asks for foreground location, then background location, then notification " +
                         "permission. Background tracking needs the location foreground service and a " +

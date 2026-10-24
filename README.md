@@ -19,8 +19,36 @@ as a list and on a map. See `REQUIREMENTS.md` for the full specification.
 Tracking runs in a foreground service with a persistent notification, started only
 by an explicit user action. Location comes from `FusedLocationProviderClient`
 (Google Play services) with a fallback to `LocationManager`. The default reporting
-interval is **90 s** (the server allows 5 requests / 300 s / IP); a `429` skips the
-next two ticks.
+interval is **90 s** (the server allows 5 requests / 300 s / IP); a `429` without
+`Retry-After` skips the next two ticks, while one with `Retry-After` waits at
+least the server's value (capped at one hour).
+
+## Doze, wake locks and battery
+
+Each tick deliberately takes a **short partial wake lock** (`PARTIAL_WAKE_LOCK`)
+immediately before location acquisition and releases it in a `finally` block
+after the POST completes, including when the POST fails. The lock has a 2-minute
+safety timeout and is not reference-counted, so a wedged tick cannot leak it. The
+permission is `WAKE_LOCK`.
+
+This is a conscious decision, not an accident:
+
+- **What it buys:** the CPU stays awake for the few seconds a tick actually needs
+  (fix plus HTTPS request), so a tick that has started is less likely to be
+  suspended mid-flight.
+- **What it does not buy:** it cannot force a tick to start during deep Doze. In
+  deep idle the coroutine `delay()` still fires late, in a maintenance window, so
+  reports can slip from 90 s to whatever the OS allows. No WorkManager job and no
+  exact alarm was added; those would either change the cadence or require a much
+  more intrusive scheduling model.
+- **Battery cost:** one partial wake lock per 90 s, held for the duration of each
+  tick, is a real all-day cost — inherent to a 90 s reporting spec, not free.
+  A partial lock keeps the screen off and does not itself power the GPS radio;
+  the dominant cost remains acquiring a fix every tick.
+
+**Unverified at runtime:** there is no device or emulator on the machine used to
+develop this, so actual Doze behaviour, maintenance-window timing and battery
+drain have not been measured.
 
 ## TLS
 

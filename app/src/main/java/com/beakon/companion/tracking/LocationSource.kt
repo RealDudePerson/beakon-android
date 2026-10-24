@@ -29,13 +29,13 @@ interface LocationSource {
  * after the UI has obtained it.
  */
 object LocationSourceFactory {
-    fun create(context: Context): LocationSource {
+    fun create(context: Context, intervalSeconds: () -> Int): LocationSource {
         val playServicesAvailable = GoogleApiAvailability.getInstance()
             .isGooglePlayServicesAvailable(context) == ConnectionResult.SUCCESS
         return if (playServicesAvailable) {
             FusedLocationSource(context)
         } else {
-            PlatformLocationSource(context)
+            PlatformLocationSource(context, intervalSeconds)
         }
     }
 }
@@ -57,7 +57,11 @@ class FusedLocationSource(context: Context) : LocationSource {
         }
 }
 
-class PlatformLocationSource(context: Context) : LocationSource {
+class PlatformLocationSource(
+    context: Context,
+    private val intervalSeconds: () -> Int,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : LocationSource {
 
     private val manager =
         context.applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -69,11 +73,20 @@ class PlatformLocationSource(context: Context) : LocationSource {
         val providers = PROVIDERS.filter { manager.isProviderEnabled(it) }
         if (providers.isEmpty()) return null
 
-        val lastKnown = providers
+        val knownFixes = providers
             .mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }
-            .maxByOrNull { it.time }
+        // Reject stale last-known fixes: they would otherwise be pushed with a
+        // fresh server timestamp and present an old position as current.
+        val lastKnown = LastKnownFix.freshest(
+            fixes = knownFixes,
+            nowMs = clock(),
+            maxAgeMs = LastKnownFix.maxAgeMs(intervalSeconds()),
+            timeOf = { it.time },
+        )
         if (lastKnown != null) return lastKnown
 
+        // Nothing fresh: try a live fix. If that also yields nothing the caller
+        // reports NoFix/waiting — a position is never invented.
         return withTimeoutOrNull(FIX_TIMEOUT_MS) {
             suspendCancellableCoroutine { continuation ->
                 val listener = object : LocationListener {
@@ -91,7 +104,16 @@ class PlatformLocationSource(context: Context) : LocationSource {
                     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
                 }
                 continuation.invokeOnCancellation { manager.removeUpdates(listener) }
-                manager.requestLocationUpdates(providers.first(), 0L, 0f, listener, Looper.getMainLooper())
+                // Sane minimums instead of 0/0: 0/0 asks for updates as fast as
+                // the provider can deliver, the worst-case radio/GPS cost in the
+                // app. The first callback still wins (the timeout is 20 s).
+                manager.requestLocationUpdates(
+                    providers.first(),
+                    FallbackFixRequest.MIN_TIME_MS,
+                    FallbackFixRequest.MIN_DISTANCE_M,
+                    listener,
+                    Looper.getMainLooper(),
+                )
             }
         }
     }
@@ -106,3 +128,14 @@ class PlatformLocationSource(context: Context) : LocationSource {
 }
 
 private const val FIX_TIMEOUT_MS = 20_000L
+
+/**
+ * Rates for the fallback live-fix request. Kept in one place so the values are
+ * unit-tested and cannot silently drift back to `0`/`0`. They are deliberately
+ * far below the reporting interval: this request only exists to obtain a first
+ * fix, and the first callback wins.
+ */
+object FallbackFixRequest {
+    const val MIN_TIME_MS = 1_000L
+    const val MIN_DISTANCE_M = 1f
+}

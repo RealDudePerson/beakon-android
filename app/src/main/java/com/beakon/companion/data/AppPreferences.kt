@@ -83,9 +83,21 @@ class AppPreferences(
             )
             .apply()
 
+    /**
+     * The last tracking-impairing error, persisted so it survives process death
+     * and is shown at app start even when its notification was hidden. Null when
+     * the last send succeeded or no error has occurred.
+     */
+    var lastTrackingError: String?
+        get() = prefs.getString(KEY_LAST_ERROR, null)
+        set(value) = prefs.edit().putString(KEY_LAST_ERROR, value).apply()
+
     /** Removes credentials-related state on logout. Keeps the URL/username prefill. */
     fun clearSession() {
-        prefs.edit().putBoolean(KEY_TRACKING, false).apply()
+        prefs.edit()
+            .putBoolean(KEY_TRACKING, false)
+            .remove(KEY_LAST_ERROR)
+            .apply()
     }
 
     private fun readStartTrackingOnBoot(): Boolean = prefs.getBoolean(KEY_BOOT_START, false)
@@ -121,5 +133,6 @@ class AppPreferences(
         private const val KEY_INTERVAL = "interval_seconds"
         private const val KEY_ACCURACY_THRESHOLD = "accuracy_threshold_m"
         private const val KEY_BOOT_START = "start_tracking_on_boot"
+        private const val KEY_LAST_ERROR = "last_tracking_error"
     }
 }
