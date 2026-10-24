@@ -32,6 +32,14 @@ data class TrackingStatus(
      * state instead of claiming tracking is on.
      */
     val trackingNeedsResume: Boolean = false,
+    /**
+     * True when tracking was stopped because the server repeatedly rejected
+     * the API secret (see [AuthRejectionTracker]). The Status screen shows a
+     * sign-in-again banner instead of a green toggle; cleared on the next
+     * successful sign-in, on logout, or when the user explicitly restarts
+     * tracking (which will re-trip if the secret is still dead).
+     */
+    val needsReauth: Boolean = false,
 )
 
 /**
@@ -59,6 +67,30 @@ class TrackingStateStore(
 
     fun setTracking(on: Boolean) {
         _status.value = _status.value.copy(tracking = on, trackingNeedsResume = false)
+    }
+
+    /**
+     * Records that tracking was stopped because the server repeatedly
+     * rejected the API secret. Tracking is off and the user must sign in
+     * again; the banner on the Status screen is driven by [needsReauth],
+     * not by the resume state, so the two are never confused.
+     */
+    fun recordAuthRejectedStop() {
+        val message = SendResult.AuthRejected.userMessage()
+            ?: "Authentication rejected by the server. Sign in again from Setup."
+        _status.value = _status.value.copy(
+            tracking = false,
+            trackingNeedsResume = false,
+            needsReauth = true,
+            lastError = message,
+            lastSendSucceeded = false,
+        )
+        persistError(message)
+    }
+
+    fun clearNeedsReauth() {
+        if (!_status.value.needsReauth) return
+        _status.value = _status.value.copy(needsReauth = false)
     }
 
     /**

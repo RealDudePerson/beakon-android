@@ -22,6 +22,7 @@ import com.beakon.companion.net.TokenResult
 import com.beakon.companion.net.userMessage
 import com.beakon.companion.tracking.TrackingStatus
 import java.security.SecureRandom
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -63,6 +64,11 @@ interface AppViewModelState {
     fun clearSecrets()
     val trackingStatus: StateFlow<TrackingStatus>
     fun setTracking(on: Boolean)
+    /**
+     * Clears the persistent-401 banner flag. Default no-op so JVM test
+     * fakes need not implement it; the production state overrides it.
+     */
+    fun clearNeedsReauth() = Unit
 }
 
 class AppViewModel @JvmOverloads constructor(
@@ -281,6 +287,25 @@ class AppViewModel @JvmOverloads constructor(
         busy = true
         setupMessage = null
         viewModelScope.launch {
+            try {
+                completeSetupNetwork(url, host)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                // The client only maps SSL/IO failures to result types; an
+                // unchecked failure (e.g. from the HTTP layer) must surface
+                // as a setup message, never escape the coroutine and crash
+                // the app, and never leave the UI stuck busy.
+                withContext(Dispatchers.Main) {
+                    busy = false
+                    setupMessage =
+                        "Could not sign in: ${error.message ?: error.javaClass.simpleName}"
+                }
+            }
+        }
+    }
+
+    private suspend fun completeSetupNetwork(url: String, host: String) {
             // Platform trust is the default. A stored fingerprint is used only
             // if the platform rejects the certificate; on the platform-trust
             // path no fingerprint is stored or consulted.
@@ -293,14 +318,14 @@ class AppViewModel @JvmOverloads constructor(
                     certificateRejected = true
                     setupMessage = login.userMessage()
                 }
-                return@launch
+                return
             }
             if (login != LoginResult.Success) {
                 withContext(Dispatchers.Main) {
                     busy = false
                     setupMessage = login.userMessage()
                 }
-                return@launch
+                return
             }
             val secret = generateSecret()
             val token = withContext(Dispatchers.IO) { client.setApiToken(secret) }
@@ -318,17 +343,18 @@ class AppViewModel @JvmOverloads constructor(
                     loggedIn = true
                     certificateRejected = false
                     setupMessage = null
+                    state.clearNeedsReauth()
                 } else {
                     setupMessage = token.userMessage()
                 }
             }
-        }
     }
 
     fun logout() {
         state.setTracking(false)
         state.clearSession()
         state.clearSecrets()
+        state.clearNeedsReauth()
         loggedIn = false
         history = emptyList()
         latest = null
@@ -465,4 +491,6 @@ private class AndroidAppViewModelState(
     override val trackingStatus: StateFlow<TrackingStatus> = container.trackingState.status
 
     override fun setTracking(on: Boolean) = container.trackingState.setTracking(on)
+
+    override fun clearNeedsReauth() = container.trackingState.clearNeedsReauth()
 }

@@ -140,6 +140,17 @@ fun StatusScreen(
                         Text("Resume tracking")
                     }
                 }
+                if (status.needsReauth) {
+                    Text(
+                        "Tracking stopped: the server rejected the sign-in repeatedly. " +
+                            "Sign in again from Setup — the old API secret no longer works.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open Setup and sign in again")
+                    }
+                }
                 Text(
                     "Beakon asks for foreground location, then background location, then notification " +
                         "permission. Background tracking needs the location foreground service and a " +
@@ -189,7 +200,8 @@ fun StatusScreen(
                 Text("Reporting interval", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "The server rate limits /api/recordlocation to 5 requests per 300 s per IP. " +
-                        "The default is 90 s; 60 s is the minimum offered.",
+                        "The default is 90 s; 60 s is the minimum offered. A change takes effect " +
+                        "from the next report, without restarting tracking.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

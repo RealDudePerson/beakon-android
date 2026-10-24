@@ -12,11 +12,17 @@ import kotlinx.coroutines.isActive
  * A failure in [tick] is handed to [onError] and the loop continues on the same
  * cadence. Only coroutine cancellation escapes: an unexpected exception must
  * never take down the process or end tracking silently.
+ *
+ * The interval is read through [intervalMsProvider] before every delay, not
+ * captured once at loop start: changing the reporting interval in Settings
+ * takes effect from the next tick without toggling tracking off and on. A
+ * delay already in progress is not interrupted; the new value applies to
+ * the delay that follows the next tick.
  */
 object TickLoop {
 
     suspend fun run(
-        intervalMs: Long,
+        intervalMsProvider: () -> Long,
         tick: suspend () -> Unit,
         onError: suspend (Throwable) -> Unit,
         delayFor: suspend (Long) -> Unit = { delay(it) },
@@ -39,7 +45,15 @@ object TickLoop {
                     // killing the loop; the tick itself is still retried.
                 }
             }
-            delayFor(intervalMs)
+            delayFor(intervalMsProvider())
         }
     }
+
+    /** Fixed-interval convenience overload; delegates to the provider form. */
+    suspend fun run(
+        intervalMs: Long,
+        tick: suspend () -> Unit,
+        onError: suspend (Throwable) -> Unit,
+        delayFor: suspend (Long) -> Unit = { delay(it) },
+    ) = run({ intervalMs }, tick, onError, delayFor)
 }

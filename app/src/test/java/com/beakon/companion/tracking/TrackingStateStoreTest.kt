@@ -143,6 +143,32 @@ class TrackingStateStoreTest {
         assertNull(persisted.last())
     }
 
+    @Test
+    fun `an auth-rejected stop turns tracking off and sets the reauth flag`() {
+        val store = TrackingStateStore()
+        store.setTracking(true)
+
+        store.recordAuthRejectedStop()
+
+        val status = store.status.value
+        assertFalse("tracking must be off after a persistent 401", status.tracking)
+        assertFalse(status.trackingNeedsResume)
+        assertTrue("the Status screen must show the sign-in-again banner", status.needsReauth)
+        assertNotNull(status.lastError)
+        assertTrue(status.lastError!!.contains("sign in again"))
+    }
+
+    @Test
+    fun `clearing the reauth flag leaves tracking and the error alone`() {
+        val store = TrackingStateStore()
+        store.recordAuthRejectedStop()
+
+        store.clearNeedsReauth()
+
+        assertFalse(store.status.value.needsReauth)
+        assertNotNull(store.status.value.lastError)
+    }
+
     private fun atNoon(year: Int, month: Int, day: Int): Long =
         LocalDate.of(year, month, day)
             .atTime(12, 0)

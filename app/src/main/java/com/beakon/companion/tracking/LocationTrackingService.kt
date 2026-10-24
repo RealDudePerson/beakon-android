@@ -15,6 +15,7 @@ import com.beakon.companion.net.BeakonClient
 import com.beakon.companion.net.BeakonUrl
 import com.beakon.companion.net.LocationReport
 import com.beakon.companion.net.SendResult
+import com.beakon.companion.net.userMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,6 +37,7 @@ class LocationTrackingService : Service() {
     private lateinit var container: AppContainer
     private lateinit var locationSource: LocationSource
     private val backoff = RateLimitBackoff()
+    private val authRejections = AuthRejectionTracker()
 
     private var cachedClient: BeakonClient? = null
     private var cachedClientKey: Pair<String, String?>? = null
@@ -78,11 +80,15 @@ class LocationTrackingService : Service() {
     private fun startTracking() {
         if (loopJob?.isActive == true) return
         isRunning = true
+        authRejections.reset()
+        container.trackingState.clearNeedsReauth()
         container.trackingState.setTrackingHealth(trackingEnabled = true, serviceRunning = true)
         container.preferences.trackingEnabled = true
         loopJob = scope.launch {
             TickLoop.run(
-                intervalMs = container.preferences.intervalSeconds * 1000L,
+                // Read the interval on every iteration: a change in Settings
+                // takes effect from the next tick without restarting tracking.
+                intervalMsProvider = { container.preferences.intervalSeconds * 1000L },
                 tick = { runTick() },
                 onError = { error ->
                     val message =
@@ -176,6 +182,20 @@ class LocationTrackingService : Service() {
                 backoff = backoff,
             )
             val result = coordinator.report(report)
+            if (authRejections.onResult(result)) {
+                // The secret is dead (e.g. it was overwritten by a sign-in on
+                // another device). Stop instead of POSTing every 90 s forever:
+                // the error notification and the Status banner point the user
+                // at Setup, and tracking only resumes after a fresh sign-in.
+                container.trackingState.recordAuthRejectedStop()
+                NotificationHelper.showError(
+                    this,
+                    SendResult.AuthRejected.userMessage()
+                        ?: "Authentication rejected by the server. Sign in again from Setup.",
+                )
+                stopTracking()
+                return@withWakeLock
+            }
             updateNotification(TickWiring.notificationText(result, report != null))
         }
     }

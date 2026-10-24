@@ -66,8 +66,8 @@ cleartext HTTP is disabled (`network_security_config.xml`).
 
 ## Build
 
-Requires JDK 17+ and the Android SDK (`platforms;android-35`,
-`build-tools;35.0.0`). Point `local.properties` at the SDK, or set `ANDROID_HOME`.
+Requires JDK 17+ and the Android SDK (`platforms;android-36`,
+`build-tools;36.0.0`). Point `local.properties` at the SDK, or set `ANDROID_HOME`.
 
 ```bash
 export ANDROID_HOME="$HOME/android-sdk"
