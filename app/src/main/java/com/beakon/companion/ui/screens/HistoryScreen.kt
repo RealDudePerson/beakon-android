@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.beakon.companion.net.LocationDto
 import com.beakon.companion.ui.AppViewModel
 import com.beakon.companion.ui.Format
+import com.beakon.companion.ui.geocodeCacheKey
 
 @Composable
 fun HistoryScreen(viewModel: AppViewModel) {
@@ -60,7 +61,11 @@ fun HistoryScreen(viewModel: AppViewModel) {
             message = { viewModel.historyMessage },
         )
 
-        HistoryList(viewModel.history)
+        HistoryList(
+            history = viewModel.history,
+            placeNames = { viewModel.placeNames },
+            loadPlaceName = { point -> viewModel.loadPlaceName(point) },
+        )
     }
 }
 
@@ -108,11 +113,20 @@ private fun HistoryEmpty(
  * that returns the same points rather than being positional.
  */
 @Composable
-private fun HistoryList(history: List<LocationDto>) {
+private fun HistoryList(
+    history: List<LocationDto>,
+    placeNames: () -> Map<String, String>,
+    loadPlaceName: (LocationDto) -> Unit,
+) {
     val rows = remember(history) { newestFirstKeyed(history) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(rows, key = { it.key }) { row ->
-            HistoryRow(row.point)
+            HistoryRow(
+                key = row.key,
+                point = row.point,
+                placeName = placeNames()[geocodeCacheKey(row.point.lat, row.point.lon)],
+                loadPlaceName = loadPlaceName,
+            )
         }
     }
 }
@@ -140,10 +154,22 @@ internal fun newestFirstKeyed(history: List<LocationDto>): List<KeyedLocation> {
 }
 
 @Composable
-private fun HistoryRow(point: LocationDto) {
+private fun HistoryRow(
+    key: String,
+    point: LocationDto,
+    placeName: String?,
+    loadPlaceName: (LocationDto) -> Unit,
+) {
+    // One lookup per row identity: the key is content-based (timestamp +
+    // coordinates), so a refresh returning the same points does not re-query,
+    // while a genuinely new point gets its own lookup when it scrolls in.
+    LaunchedEffect(key) { loadPlaceName(point) }
     Card {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(Format.serverTime(point.timestamp), style = MaterialTheme.typography.titleSmall)
+            placeName?.let { name ->
+                Text(name, style = MaterialTheme.typography.bodyMedium)
+            }
             Text(
                 "%.5f, %.5f".format(point.lat, point.lon),
                 style = MaterialTheme.typography.bodyMedium,

@@ -93,7 +93,6 @@ fun BeakonApp(viewModel: AppViewModel = viewModel()) {
             composable("status") {
                 StatusScreen(
                     viewModel = viewModel,
-                    onOpenSetup = { navController.navigate("setup") },
                 )
             }
             composable("map") { MapScreen(viewModel) }

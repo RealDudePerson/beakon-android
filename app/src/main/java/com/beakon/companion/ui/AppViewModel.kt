@@ -85,6 +85,8 @@ class AppViewModel @JvmOverloads constructor(
     /** Injectable clock so the history TTL is testable. */
     private val now: () -> Long = System::currentTimeMillis,
     private val historyTtlMs: Long = HISTORY_TTL_MS,
+    /** Reverse-geocoding for history points. Injected so tests can supply a fake. */
+    private val geocode: GeocodeLookup = AndroidGeocoderLookup(application),
 ) : AndroidViewModel(application) {
 
     val status: StateFlow<TrackingStatus> = state.trackingStatus
@@ -130,6 +132,17 @@ class AppViewModel @JvmOverloads constructor(
         private set
     var historyLoading by mutableStateOf(false)
         private set
+
+    /**
+     * Reverse-geocoded place names for history points, keyed by
+     * [geocodeCacheKey]. In-memory only: it is rebuilt when the History tab
+     * is opened, and a failed lookup simply leaves the point showing its
+     * coordinates. Keys currently being looked up, so a row that recomposes
+     * does not fire a duplicate request for the same coordinates.
+     */
+    var placeNames by mutableStateOf<Map<String, String>>(emptyMap())
+        private set
+    private val geocodeInFlight = mutableSetOf<String>()
 
     /** Start time of the last history attempt, used by the tab-entry TTL. */
     private var lastHistoryAttemptAt: Long? = null
@@ -403,6 +416,33 @@ class AppViewModel @JvmOverloads constructor(
                     }
                     else -> historyMessage = result.userMessage()
                 }
+            }
+        }
+    }
+
+    /**
+     * Starts a reverse-geocode lookup for one history point, unless its place
+     * name is already cached or a lookup for those coordinates is running.
+     * The lookup runs on Dispatchers.IO; only the cache update lands on the
+     * main thread. A null result is cached as nothing, so the row keeps
+     * showing coordinates and a later recomposition may retry.
+     */
+    fun loadPlaceName(point: LocationDto) {
+        val key = geocodeCacheKey(point.lat, point.lon)
+        if (placeNames.containsKey(key) || !geocodeInFlight.add(key)) return
+        viewModelScope.launch {
+            val name = withContext(Dispatchers.IO) {
+                try {
+                    geocode.placeName(point.lat, point.lon)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            geocodeInFlight.remove(key)
+            if (name != null) {
+                placeNames = placeNames + (key to name)
             }
         }
     }

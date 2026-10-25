@@ -16,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,7 +36,6 @@ import com.beakon.companion.ui.Permissions
 @Composable
 fun StatusScreen(
     viewModel: AppViewModel,
-    onOpenSetup: () -> Unit,
 ) {
     val context = LocalContext.current
     val status by viewModel.status.collectAsState()
@@ -143,13 +141,10 @@ fun StatusScreen(
                 if (status.needsReauth) {
                     Text(
                         "Tracking stopped: the server rejected the sign-in repeatedly. " +
-                            "Sign in again from Setup — the old API secret no longer works.",
+                            "The old API secret no longer works — log out below and sign in again.",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    Button(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open Setup and sign in again")
-                    }
                 }
                 Text(
                     "Beakon asks for foreground location, then background location, then notification " +
@@ -259,9 +254,6 @@ fun StatusScreen(
             }
         }
 
-        OutlinedButton(onClick = onOpenSetup, modifier = Modifier.fillMaxWidth()) {
-            Text("Open Setup")
-        }
         Button(
             onClick = {
                 LocationTrackingService.stop(context)
