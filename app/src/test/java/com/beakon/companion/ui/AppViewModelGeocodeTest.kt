@@ -98,7 +98,10 @@ class AppViewModelGeocodeTest {
         val viewModel = viewModel(geocode)
 
         viewModel.loadPlaceName(oceanside)
-        advanceUntilIdle()
+        // The lookup runs on real Dispatchers.IO, so plain advanceUntilIdle
+        // (test dispatcher only) can assert before it has run. Wait the same
+        // way the other geocode tests do.
+        awaitSettled { geocode.calls == 1 }
 
         assertTrue("a null lookup must not fabricate a name", viewModel.placeNames.isEmpty())
         assertEquals(1, geocode.calls)
