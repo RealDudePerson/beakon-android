@@ -107,12 +107,42 @@ class AppViewModelGeocodeTest {
         assertEquals(1, geocode.calls)
     }
 
+    @Test
+    fun `a resolved name is saved to the cache and preloaded by a new view model`() =
+        runTest(mainDispatcher) {
+            val cache = com.beakon.companion.data.InMemoryPlaceNameCache()
+            val geocode = CountingGeocode(mapOf(oceanside to "Oceanside, California"))
+            val first = viewModel(geocode, cache)
+
+            first.loadPlaceName(oceanside)
+            awaitSettled { first.placeNames.isNotEmpty() }
+            assertEquals(
+                "Oceanside, California",
+                cache.loadAll()[geocodeCacheKey(oceanside.lat, oceanside.lon)],
+            )
+
+            val neverCalled = CountingGeocode(emptyMap())
+            val second = viewModel(neverCalled, cache)
+            assertEquals(
+                "a new ViewModel must start from the persistent cache",
+                "Oceanside, California",
+                second.placeNames[geocodeCacheKey(oceanside.lat, oceanside.lon)],
+            )
+            second.loadPlaceName(oceanside)
+            advanceUntilIdle()
+            assertEquals("a cached name must not re-query", 0, neverCalled.calls)
+        }
+
     // --- helpers -----------------------------------------------------------
 
-    private fun viewModel(geocode: GeocodeLookup): AppViewModel = AppViewModel(
+    private fun viewModel(
+        geocode: GeocodeLookup,
+        cache: com.beakon.companion.data.PlaceNameCache? = null,
+    ): AppViewModel = AppViewModel(
         application = Application(),
         state = FakeGeocodeState(),
         geocode = geocode,
+        placeNameCache = cache,
     )
 
     private fun TestScope.awaitSettled(timeoutMs: Long = 5_000, condition: () -> Boolean) {

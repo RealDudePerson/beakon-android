@@ -9,6 +9,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.beakon.companion.BeakonApplication
 import com.beakon.companion.data.AppContainer
+import com.beakon.companion.data.InMemoryPlaceNameCache
+import com.beakon.companion.data.PlaceNameCache
+import com.beakon.companion.data.ThemeMode
 import com.beakon.companion.net.BeakonClient
 import com.beakon.companion.net.BeakonSession
 import com.beakon.companion.net.BeakonUrl
@@ -24,6 +27,7 @@ import com.beakon.companion.tracking.TrackingStatus
 import java.security.SecureRandom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,6 +57,11 @@ interface AppViewModelState {
     /** Storage-backed view of the "start tracking at boot" setting. */
     val startTrackingOnBoot: StateFlow<Boolean>
     fun setStartTrackingOnBoot(on: Boolean)
+    /** Persistent place-name cache. Default in-memory so test fakes need not implement it. */
+    val placeNameCache: PlaceNameCache get() = InMemoryPlaceNameCache()
+    /** Appearance setting. Default SYSTEM so test fakes need not implement it. */
+    val themeMode: StateFlow<ThemeMode> get() = MutableStateFlow(ThemeMode.SYSTEM)
+    fun setThemeMode(mode: ThemeMode) = Unit
     fun clearSession()
     fun pinFor(host: String): String?
     fun storePin(host: String, sha256: String)
@@ -90,7 +99,12 @@ class AppViewModel @JvmOverloads constructor(
         AndroidGeocoderLookup(application),
         NominatimGeocoderLookup(),
     ),
+    /** Persistent place-name cache. Null means the production state store. */
+    placeNameCache: PlaceNameCache? = null,
 ) : AndroidViewModel(application) {
+
+    private val resolvedPlaceNameCache: PlaceNameCache =
+        placeNameCache ?: state.placeNameCache
 
     val status: StateFlow<TrackingStatus> = state.trackingStatus
 
@@ -138,12 +152,14 @@ class AppViewModel @JvmOverloads constructor(
 
     /**
      * Reverse-geocoded place names for history points, keyed by
-     * [geocodeCacheKey]. In-memory only: it is rebuilt when the History tab
-     * is opened, and a failed lookup simply leaves the point showing its
-     * coordinates. Keys currently being looked up, so a row that recomposes
-     * does not fire a duplicate request for the same coordinates.
+     * [geocodeCacheKey]. Seeded from the persistent cache at startup, so a
+     * name resolved once is shown immediately on later launches without
+     * another lookup; new names are saved to the cache as they resolve.
+     * A failed lookup simply leaves the point showing its coordinates.
+     * Keys currently being looked up, so a row that recomposes does not
+     * fire a duplicate request for the same coordinates.
      */
-    var placeNames by mutableStateOf<Map<String, String>>(emptyMap())
+    var placeNames by mutableStateOf<Map<String, String>>(resolvedPlaceNameCache.loadAll())
         private set
     private val geocodeInFlight = mutableSetOf<String>()
 
@@ -174,6 +190,13 @@ class AppViewModel @JvmOverloads constructor(
 
     fun setStartTrackingOnBoot(on: Boolean) {
         state.setStartTrackingOnBoot(on)
+    }
+
+    /** Collected directly from the preference-backed flow, like the boot toggle. */
+    val themeMode: StateFlow<ThemeMode> = state.themeMode
+
+    fun setThemeMode(mode: ThemeMode) {
+        state.setThemeMode(mode)
     }
 
     fun onUrlChanged(value: String) {
@@ -446,6 +469,7 @@ class AppViewModel @JvmOverloads constructor(
             geocodeInFlight.remove(key)
             if (name != null) {
                 placeNames = placeNames + (key to name)
+                resolvedPlaceNameCache.save(key, name)
             }
         }
     }
@@ -508,6 +532,14 @@ private class AndroidAppViewModelState(
 
     override fun setStartTrackingOnBoot(on: Boolean) {
         container.preferences.startTrackingOnBoot = on
+    }
+
+    override val placeNameCache: PlaceNameCache = container.placeNames
+
+    override val themeMode: StateFlow<ThemeMode> = container.preferences.themeModeFlow
+
+    override fun setThemeMode(mode: ThemeMode) {
+        container.preferences.themeMode = mode
     }
 
     override fun clearSession() = container.preferences.clearSession()

@@ -14,6 +14,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * The primary constructor takes a [SharedPreferences] directly so this class can
  * be unit-tested on the JVM; production code uses the [Context] constructor.
  */
+/** App appearance: follow the system, or force light or dark. */
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
 class AppPreferences(
     private val prefs: SharedPreferences,
 ) {
@@ -31,15 +38,21 @@ class AppPreferences(
      */
     val startTrackingOnBootFlow: StateFlow<Boolean> = _startTrackingOnBoot.asStateFlow()
 
-    private val bootStartListener =
+    private val _themeMode = MutableStateFlow(readThemeMode())
+
+    /** Reactive view of [themeMode], same listener pattern as the boot toggle. */
+    val themeModeFlow: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    private val preferenceListener =
         SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == KEY_BOOT_START) {
-                _startTrackingOnBoot.value = readStartTrackingOnBoot()
+            when (key) {
+                KEY_BOOT_START -> _startTrackingOnBoot.value = readStartTrackingOnBoot()
+                KEY_THEME -> _themeMode.value = readThemeMode()
             }
         }
 
     init {
-        prefs.registerOnSharedPreferenceChangeListener(bootStartListener)
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
     }
 
     var instanceUrl: String?
@@ -100,6 +113,15 @@ class AppPreferences(
             .apply()
     }
 
+    /** Appearance setting. Defaults to SYSTEM; an unknown stored value is SYSTEM. */
+    var themeMode: ThemeMode
+        get() = readThemeMode()
+        set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
+
+    private fun readThemeMode(): ThemeMode =
+        runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
+            .getOrDefault(ThemeMode.SYSTEM)
+
     private fun readStartTrackingOnBoot(): Boolean = prefs.getBoolean(KEY_BOOT_START, false)
 
     companion object {
@@ -133,6 +155,7 @@ class AppPreferences(
         private const val KEY_INTERVAL = "interval_seconds"
         private const val KEY_ACCURACY_THRESHOLD = "accuracy_threshold_m"
         private const val KEY_BOOT_START = "start_tracking_on_boot"
+        private const val KEY_THEME = "theme_mode"
         private const val KEY_LAST_ERROR = "last_tracking_error"
     }
 }

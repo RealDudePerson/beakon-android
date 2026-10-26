@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.beakon.companion.data.ThemeMode
 import com.beakon.companion.tracking.LocationTrackingService
 import com.beakon.companion.ui.AppViewModel
 import com.beakon.companion.ui.Format
@@ -40,6 +41,7 @@ fun StatusScreen(
     val context = LocalContext.current
     val status by viewModel.status.collectAsState()
     val startTrackingOnBoot by viewModel.startTrackingOnBoot.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     var permissionMessage by remember { mutableStateOf<String?>(null) }
 
     // Permission chain: foreground -> background -> notifications -> start.
@@ -251,6 +253,30 @@ fun StatusScreen(
                         "started at boot unless you turn this on.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Appearance", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "System follows the device. Light and dark override it. " +
+                        "The choice is saved and applies on the next launch too.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        ThemeMode.SYSTEM to "System",
+                        ThemeMode.LIGHT to "Light",
+                        ThemeMode.DARK to "Dark",
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = themeMode == mode,
+                            onClick = { viewModel.setThemeMode(mode) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
             }
         }
 

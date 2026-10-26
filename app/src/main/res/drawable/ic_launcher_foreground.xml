@@ -4,7 +4,23 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Simple location pin glyph for the launcher icon. -->
+    <!-- Location pin broadcasting: the pin from the old icon, with two
+         signal arcs radiating from its dot to the upper right. The arcs
+         are centred on the pin dot (54,45); stroke width 4dp so they stay
+         legible at launcher size. The same drawable doubles as the
+         monochrome layer, where only its alpha matters. -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M65,26A22,22 0 0 1 65,64" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M70,17.3A32,32 0 0 1 70,72.7" />
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M54,30c-8.3,0 -15,6.7 -15,15c0,11.2 15,27 15,27s15,-15.8 15,-27C69,36.7 62.3,30 54,30zM54,50c-2.8,0 -5,-2.2 -5,-5s2.2,-5 5,-5s5,2.2 5,5S56.8,50 54,50z" />
