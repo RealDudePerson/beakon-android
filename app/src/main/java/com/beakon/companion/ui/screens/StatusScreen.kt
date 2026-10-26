@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.beakon.companion.data.ThemeMode
 import com.beakon.companion.tracking.LocationTrackingService
@@ -42,6 +45,8 @@ fun StatusScreen(
     val status by viewModel.status.collectAsState()
     val startTrackingOnBoot by viewModel.startTrackingOnBoot.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    var customInterval by remember { mutableStateOf("") }
+    var customIntervalError by remember { mutableStateOf<String?>(null) }
     var permissionMessage by remember { mutableStateOf<String?>(null) }
 
     // Permission chain: foreground -> background -> notifications -> start.
@@ -196,10 +201,13 @@ fun StatusScreen(
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Reporting interval", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "The server rate limits /api/recordlocation to 5 requests per 300 s per IP. " +
-                        "The default is 90 s; 60 s is the minimum offered. A change takes effect " +
-                        "from the next report, without restarting tracking.",
+                    "A change takes effect from the next report, without restarting tracking. " +
+                        "Shorter intervals use more battery.",
                     style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "Current interval: ${viewModel.intervalSeconds}s",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(60, 90, 120, 300).forEach { seconds ->
@@ -209,6 +217,36 @@ fun StatusScreen(
                             label = { Text("${seconds}s") },
                         )
                     }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = customInterval,
+                        onValueChange = {
+                            customInterval = it.filter { char -> char.isDigit() }
+                            customIntervalError = null
+                        },
+                        label = { Text("Custom seconds") },
+                        placeholder = { Text("1–10000") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(onClick = {
+                        val seconds = customInterval.toIntOrNull()
+                        if (seconds != null && seconds in 1..10000) {
+                            viewModel.setInterval(seconds)
+                        } else {
+                            customIntervalError = "Enter a whole number from 1 to 10000."
+                        }
+                    }) {
+                        Text("Set")
+                    }
+                }
+                customIntervalError?.let { error ->
+                    Text(error, color = MaterialTheme.colorScheme.error)
                 }
             }
         }

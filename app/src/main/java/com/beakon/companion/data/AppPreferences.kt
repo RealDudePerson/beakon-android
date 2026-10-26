@@ -75,11 +75,11 @@ class AppPreferences(
         get() = readStartTrackingOnBoot()
         set(value) = prefs.edit().putBoolean(KEY_BOOT_START, value).apply()
 
-    /** Reporting interval in seconds. Never below [MIN_INTERVAL_SECONDS]. */
+    /** Reporting interval in seconds, clamped to [MIN_INTERVAL_SECONDS]..[MAX_INTERVAL_SECONDS]. */
     var intervalSeconds: Int
         get() = prefs.getInt(KEY_INTERVAL, DEFAULT_INTERVAL_SECONDS)
         set(value) = prefs.edit()
-            .putInt(KEY_INTERVAL, value.coerceAtLeast(MIN_INTERVAL_SECONDS))
+            .putInt(KEY_INTERVAL, value.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS))
             .apply()
 
     /**
@@ -125,12 +125,12 @@ class AppPreferences(
     private fun readStartTrackingOnBoot(): Boolean = prefs.getBoolean(KEY_BOOT_START, false)
 
     companion object {
-        /**
-         * The server allows 5 recordlocation requests per 300 s per IP. 90 s keeps
-         * a comfortable margin; 60 s sits exactly on the ceiling. Do not lower.
-         */
+        /** Default reporting interval. */
         const val DEFAULT_INTERVAL_SECONDS = 90
-        const val MIN_INTERVAL_SECONDS = 60
+
+        /** The reporting interval may be set anywhere in this range, inclusive. */
+        const val MIN_INTERVAL_SECONDS = 1
+        const val MAX_INTERVAL_SECONDS = 10000
 
         /**
          * Only fixes at least this accurate are pushed. 30 m is a common

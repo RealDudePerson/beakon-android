@@ -3,7 +3,7 @@ package com.beakon.companion.tracking
 import com.beakon.companion.net.SendResult
 
 /**
- * Backoff state for the `/api/recordlocation` rate limit (5 requests / 300 s / IP).
+ * Backoff state for `429` responses from `/api/recordlocation`.
  *
  * Two mechanisms exist:
  *  - When a 429 carries `Retry-After`, [shouldAttemptAt] holds off until at least
@@ -98,7 +98,7 @@ class RateLimitBackoff(
         @Synchronized get() = skipRemaining
 
     companion object {
-        /** One 429 without a header skips two ticks; at a 90 s interval that clears the 300 s window. */
+        /** One 429 without a header skips two ticks. */
         const val DEFAULT_SKIP_TICKS = 2
 
         /**

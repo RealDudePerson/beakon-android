@@ -19,7 +19,7 @@ as a list and on a map. See `REQUIREMENTS.md` for the full specification.
 Tracking runs in a foreground service with a persistent notification, started only
 by an explicit user action. Location comes from `FusedLocationProviderClient`
 (Google Play services) with a fallback to `LocationManager`. The default reporting
-interval is **90 s** (the server allows 5 requests / 300 s / IP); a `429` without
+interval is **90 s** and can be set anywhere from 1 s to 10000 s; a `429` without
 `Retry-After` skips the next two ticks, while one with `Retry-After` waits at
 least the server's value (capped at one hour).
 

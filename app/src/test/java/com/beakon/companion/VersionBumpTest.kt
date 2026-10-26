@@ -8,7 +8,7 @@ class VersionBumpTest {
 
     @Test
     fun `the version code was bumped for the update`() {
-        assertEquals(5, BuildConfig.VERSION_CODE)
+        assertEquals(6, BuildConfig.VERSION_CODE)
     }
 
     @Test
