@@ -86,7 +86,10 @@ class AppViewModel @JvmOverloads constructor(
     private val now: () -> Long = System::currentTimeMillis,
     private val historyTtlMs: Long = HISTORY_TTL_MS,
     /** Reverse-geocoding for history points. Injected so tests can supply a fake. */
-    private val geocode: GeocodeLookup = AndroidGeocoderLookup(application),
+    private val geocode: GeocodeLookup = FallbackGeocodeLookup(
+        AndroidGeocoderLookup(application),
+        NominatimGeocoderLookup(),
+    ),
 ) : AndroidViewModel(application) {
 
     val status: StateFlow<TrackingStatus> = state.trackingStatus

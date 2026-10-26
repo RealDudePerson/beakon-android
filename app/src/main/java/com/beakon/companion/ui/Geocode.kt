@@ -5,9 +5,21 @@ import android.location.Address
 import android.location.Geocoder
 import android.os.Build
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import kotlin.coroutines.resume
 
 /**
@@ -120,4 +132,106 @@ class AndroidGeocoderLookup(context: Context) : GeocodeLookup {
         adminArea = address.adminArea,
         countryName = address.countryName,
     )
+}
+
+/**
+ * Tries [primary] first and falls back to [fallback] only when the primary
+ * returns no name. A primary that throws (other than cancellation) is
+ * treated the same as a null result, so one failing backend never blocks
+ * the other. Cancellation is never swallowed.
+ */
+class FallbackGeocodeLookup(
+    private val primary: GeocodeLookup,
+    private val fallback: GeocodeLookup,
+) : GeocodeLookup {
+    override suspend fun placeName(lat: Double, lon: Double): String? {
+        val primaryName = try {
+            primary.placeName(lat, lon)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        if (primaryName != null) return primaryName
+        return try {
+            fallback.placeName(lat, lon)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+
+/**
+ * Extracts the place name from a Nominatim reverse-geocoding response
+ * (`format=jsonv2`). Returns null for an error response, a missing or
+ * blank `display_name`, or unparseable JSON. Pure, so it is unit-testable
+ * without any network.
+ */
+fun parseNominatimDisplayName(json: String): String? {
+    return try {
+        val element = Json { ignoreUnknownKeys = true }.parseToJsonElement(json)
+        val name = (element.jsonObject["display_name"] as? JsonPrimitive)?.content
+        name?.takeIf { it.isNotBlank() }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * Reverse geocoding via Nominatim (OpenStreetMap), used only when the
+ * platform Geocoder yields nothing. No API key is needed. The request
+ * carries an identifying User-Agent, as Nominatim's usage policy
+ * requires, and requests are throttled to at most one per second across
+ * all callers of this instance, also per that policy.
+ *
+ * The coordinates in the request are sent to nominatim.openstreetmap.org;
+ * nothing else about the device or account is sent. A non-200 response,
+ * an empty body, or a network error yields null, i.e. coordinates only.
+ */
+class NominatimGeocoderLookup(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .build(),
+    private val minIntervalMs: Long = 1_000,
+    private val now: () -> Long = System::currentTimeMillis,
+) : GeocodeLookup {
+    private val throttleMutex = Mutex()
+    private var lastRequestMs: Long = 0
+
+    override suspend fun placeName(lat: Double, lon: Double): String? {
+        return try {
+            withContext(Dispatchers.IO) {
+                throttleMutex.withLock {
+                    val wait = minIntervalMs - (now() - lastRequestMs)
+                    if (wait > 0) delay(wait)
+                    lastRequestMs = now()
+                }
+                val url = "https://nominatim.openstreetmap.org/reverse".toHttpUrl()
+                    .newBuilder()
+                    .addQueryParameter("format", "jsonv2")
+                    .addQueryParameter("lat", lat.toString())
+                    .addQueryParameter("lon", lon.toString())
+                    .addQueryParameter("zoom", "18")
+                    .addQueryParameter("addressdetails", "0")
+                    .build()
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "Beakon Companion/1.1")
+                    .header("Accept", "application/json")
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    val body = response.body?.string() ?: return@withContext null
+                    parseNominatimDisplayName(body)
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
 }
