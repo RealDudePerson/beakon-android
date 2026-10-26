@@ -89,12 +89,16 @@ and is therefore substantially smaller.
 
 So that it can be installed **over the existing app without an uninstall** (which
 would wipe the saved login, interval, accuracy threshold and fingerprint pins),
-the release build is deliberately **signed with the debug keystore**
-(`signingConfig = signingConfigs.getByName("debug")`). It is the same
-application id and signing key as the debug APK, so installing it is a normal
-update. This is not a store-release key and must not be used for distribution —
-it exists so the owner can move from the slow debug build to the fast release
-build without losing settings.
+both builds are deliberately signed with a **permanent keystore kept outside
+this repo** (`~/workspace/beakon-signing/`, never committed, and outside
+`/root`, so VM replacements cannot wipe it). It is the same application id
+and signing key for the debug and release APKs, so installing one over the
+other is a normal update. This is not a store-release key and must not be used
+for distribution — it exists so the owner can move between builds without
+losing settings. (Before 1.4 the builds used the sandbox debug keystore in
+`/root/.android`, which a VM replacement regenerated in Oct 2026; Android
+then refused updates as a different signer, which is why 1.4 requires one
+uninstall + fresh install. From 1.4 on, the signer is stable.)
 
 Minification (`isMinifyEnabled`) is **off** in the release build. This app uses
 kotlinx.serialization and Compose, where a missing keep rule shows up as a
