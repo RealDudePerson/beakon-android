@@ -12,8 +12,12 @@ import org.junit.Test
  */
 class HistoryListKeyTest {
 
-    private fun point(lat: Double, lon: Double, timestamp: String?) =
-        LocationDto(lat = lat, lon = lon, timestamp = timestamp)
+    private fun point(
+        lat: Double,
+        lon: Double,
+        timestamp: String?,
+        timestampUnix: Long? = null,
+    ) = LocationDto(lat = lat, lon = lon, timestamp = timestamp, timestampUnix = timestampUnix)
 
     @Test
     fun `newest first puts the last fetched point at the top`() {
@@ -36,6 +40,33 @@ class HistoryListKeyTest {
     fun `points that share a timestamp and coordinates still get unique keys`() {
         val duplicate = point(1.0, 2.0, "just now")
         val keys = newestFirstKeyed(listOf(duplicate, duplicate)).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun `an old server with only the display string still yields unique keys`() {
+        // Old server: no timestamp_unix, identical display string and coords.
+        val a = point(1.0, 2.0, "just now", timestampUnix = null)
+        val b = point(1.0, 2.0, "just now", timestampUnix = null)
+        val keys = newestFirstKeyed(listOf(a, b)).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun `an epoch that repeats under different display strings stays distinct`() {
+        // The additive epoch alone must not collapse rows whose strings differ.
+        val a = point(1.0, 2.0, "just now", timestampUnix = 100L)
+        val b = point(1.0, 2.0, "1 minute ago", timestampUnix = 100L)
+        val keys = newestFirstKeyed(listOf(a, b)).map { it.key }
+        assertEquals(keys.size, keys.toSet().size)
+    }
+
+    @Test
+    fun `the epoch distinguishes rows that share a display string`() {
+        // New server: same display string but different epochs must not collide.
+        val a = point(1.0, 2.0, "just now", timestampUnix = 100L)
+        val b = point(1.0, 2.0, "just now", timestampUnix = 200L)
+        val keys = newestFirstKeyed(listOf(a, b)).map { it.key }
         assertEquals(keys.size, keys.toSet().size)
     }
 

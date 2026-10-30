@@ -146,7 +146,10 @@ internal fun newestFirstKeyed(history: List<LocationDto>): List<KeyedLocation> {
     val seen = HashMap<String, Int>()
     return List(history.size) { index ->
         val point = history[history.size - 1 - index]
-        val base = "${point.timestamp.orEmpty()}|${point.lat}|${point.lon}"
+        // Include both the display string and the additive epoch: either may be
+        // absent (old server omits timestamp_unix; a new one still sends the
+        // string), and the key must stay content-based either way.
+        val base = "${point.timestamp.orEmpty()}|${point.timestampUnix ?: ""}|${point.lat}|${point.lon}"
         val occurrence = seen.getOrDefault(base, 0)
         seen[base] = occurrence + 1
         KeyedLocation(if (occurrence == 0) base else "$base#$occurrence", point)

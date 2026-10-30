@@ -30,6 +30,13 @@ data class LocationDto(
      * not try to re-derive a time from it.
      */
     val timestamp: String? = null,
+    /**
+     * Additive integer Unix epoch seconds (UTC), present on a new server and
+     * absent on an old one. Optional with a null default, so a response without
+     * it still decodes; where a real age is wanted, compute it from this when
+     * present and fall back to [timestamp] otherwise.
+     */
+    @SerialName("timestamp_unix") val timestampUnix: Long? = null,
     val batt: Int? = null,
     @SerialName("ischarging") val isCharging: Boolean? = null,
 )

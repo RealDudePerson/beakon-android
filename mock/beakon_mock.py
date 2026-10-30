@@ -195,10 +195,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send(400, "missing lat/lon")
             return
 
+        # Match the real API: a display string for `timestamp` plus the additive
+        # integer epoch in `timestamp_unix`. The app shows the string and uses
+        # the epoch only when it wants a real age.
         location = {
             "lat": body.get("lat"),
             "lon": body.get("lon"),
-            "timestamp": int(time.time()),
+            "timestamp": "just now",
+            "timestamp_unix": int(time.time()),
         }
         if body.get("batt") is not None:
             location["batt"] = body["batt"]

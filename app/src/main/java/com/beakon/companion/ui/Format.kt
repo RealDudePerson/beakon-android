@@ -15,4 +15,15 @@ object Format {
      * absent. Do not try to re-derive a time from it.
      */
     fun serverTime(timestamp: String?): String = timestamp ?: "—"
+
+    /**
+     * A real age in whole seconds, computed from the additive `timestamp_unix`
+     * epoch when the server sent it, or `null` for an old server that did not
+     * (callers then fall back to [serverTime]). Never derived from the display
+     * string, which is not parseable.
+     */
+    fun ageSeconds(
+        timestampUnix: Long?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Long? = timestampUnix?.let { (nowMillis / 1000L) - it }
 }

@@ -3,6 +3,7 @@ package com.beakon.companion.net
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +37,27 @@ class LocationsResponseDecodeTest {
         assertEquals(-74.006, parsed.latest!!.lon, 1e-9)
         assertEquals(77, parsed.latest!!.batt)
         assertEquals(false, parsed.latest!!.isCharging)
+    }
+
+    @Test
+    fun `an old server body without timestamp_unix still decodes (fallback)`() {
+        val parsed = json.decodeFromString(LocationsResponse.serializer(), REAL_RESPONSE_BODY)
+
+        assertNull("an old server omits the additive field", parsed.latest?.timestampUnix)
+        assertEquals("18 hours ago", parsed.latest?.timestamp)
+    }
+
+    @Test
+    fun `a new server body with timestamp_unix decodes additively`() {
+        val body =
+            """{"latest":{"batt":77,"ischarging":false,"lat":40.7128,"lon":-74.006,"timestamp":"18 hours ago","timestamp_unix":1792806460},"locations":[{"batt":77,"ischarging":false,"lat":40.7128,"lon":-74.006,"timestamp":"18 hours ago","timestamp_unix":1792806460}]}
+"""
+
+        val parsed = json.decodeFromString(LocationsResponse.serializer(), body)
+
+        assertEquals("18 hours ago", parsed.latest?.timestamp)
+        assertEquals(1792806460L, parsed.latest?.timestampUnix)
+        assertEquals(1792806460L, parsed.locations.single().timestampUnix)
     }
 
     @Test
