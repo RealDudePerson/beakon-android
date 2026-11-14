@@ -13,8 +13,8 @@ android {
         applicationId = "com.beakon.companion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.5"
+        versionCode = 10
+        versionName = "1.5.1"
     }
 
     // Permanent signing key: a keystore kept in ~/workspace/beakon-signing

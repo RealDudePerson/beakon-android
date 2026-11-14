@@ -125,7 +125,7 @@ fun MapScreen(viewModel: AppViewModel) {
         if (dashboardUrl != null) {
             IconButton(
                 onClick = { webView.reload() },
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
             ) {
                 Icon(Icons.Filled.Refresh, contentDescription = "Reload dashboard")
             }

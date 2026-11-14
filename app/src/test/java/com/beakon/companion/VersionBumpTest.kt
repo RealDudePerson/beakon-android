@@ -8,11 +8,11 @@ class VersionBumpTest {
 
     @Test
     fun `the version code was bumped for the update`() {
-        assertEquals(9, BuildConfig.VERSION_CODE)
+        assertEquals(10, BuildConfig.VERSION_CODE)
     }
 
     @Test
     fun `the version name was bumped for the update`() {
-        assertEquals("1.5", BuildConfig.VERSION_NAME)
+        assertEquals("1.5.1", BuildConfig.VERSION_NAME)
     }
 }
