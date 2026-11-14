@@ -3,9 +3,9 @@ package com.beakon.companion.ui.screens
 import com.beakon.companion.net.LocationDto
 
 /**
- * What an empty history/map should say. Both screens share this decision so a
- * successful zero-point fetch is explained instead of leaving a blank list or a
- * map parked on osmdroid's default (0,0).
+ * What an empty history list should say. A successful zero-point fetch is
+ * explained instead of leaving a blank list. (The Map tab no longer renders
+ * points itself — it shows the server dashboard in a WebView.)
  */
 enum class PointsEmptyState {
     /** There is something to show, or a load/error is already being explained. */
@@ -27,15 +27,3 @@ internal fun emptyPointsState(
     message != null -> PointsEmptyState.None
     else -> PointsEmptyState.NoPoints
 }
-
-/**
- * The point to mark as "latest".
- *
- * The server's `latest` field is authoritative. Falling back to the last list
- * element only covers an older/mock response that omits it; with the field
- * present, a differently-ordered list must still mark the correct point.
- */
-internal fun latestMarkerPoint(
-    latest: LocationDto?,
-    points: List<LocationDto>,
-): LocationDto? = latest ?: points.lastOrNull()

@@ -32,7 +32,7 @@ device's location in the background, and shows the user their own location histo
 | Decision | Value |
 |---|---|
 | Language / UI | Kotlin, Jetpack Compose |
-| Map | osmdroid with OSM raster tiles, no API key |
+| Map | the Beakon web dashboard (instance base URL) in a WebView, session cookie synced in |
 | Delivery | Sideloaded debug APK (`assembleDebug`) |
 | Tracking | Background, via a foreground service with a persistent notification |
 | minSdk / target | minSdk 26 (Android 8), target the current stable SDK |
@@ -121,9 +121,10 @@ gracefully — foreground-only tracking is a valid degraded mode, not an error s
    overwrite any existing API token.
 2. **Status** — tracking on/off, last fix time, last successful send time, points
    sent today, current error if any, battery. Big obvious toggle.
-3. **Map** — osmdroid view, own history as a polyline with the latest point marked.
-   Must send a descriptive OSM `User-Agent` (OSM tile policy requires it) and cache
-   tiles.
+3. **Map** — the Beakon web dashboard at the instance base URL, in an in-app
+   WebView. The app syncs its `session` cookie into the WebView so the dashboard
+   loads signed in. An SSL error cancels the load unless the presented
+   certificate matches a fingerprint the user accepted for that host.
 4. **History** — list of recent points: time, coordinates, accuracy, battery.
 
 ## Build

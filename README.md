@@ -12,8 +12,10 @@ as a list and on a map. See `REQUIREMENTS.md` for the full specification.
   fallback offered only for a certificate the platform rejects.
 - **Status** — tracking on/off, last fix, last successful send, points sent today,
   battery/charging, and a specific message for the current error.
-- **Map** — osmdroid + OSM raster tiles, own history as a polyline with the
-  latest point marked (descriptive User-Agent, cached tiles).
+- **Map** — the Beakon web dashboard itself (the instance base URL) in an
+  in-app browser view, loaded with the app's `session` cookie so a signed-in
+  user lands on the dashboard without logging in again. The native osmdroid
+  map was removed in 1.5: it duplicated what the server already renders.
 - **History** — recent points: time, coordinates, battery/charging.
 
 Tracking runs in a foreground service with a persistent notification, started only

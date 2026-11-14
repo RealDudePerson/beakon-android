@@ -13,8 +13,8 @@ android {
         applicationId = "com.beakon.companion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.4"
+        versionCode = 9
+        versionName = "1.5"
     }
 
     // Permanent signing key: a keystore kept in ~/workspace/beakon-signing
@@ -128,7 +128,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
-    implementation(libs.osmdroid.android)
     implementation(libs.play.services.location)
 
     debugImplementation(libs.androidx.compose.ui.tooling)

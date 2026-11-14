@@ -24,6 +24,7 @@ import com.beakon.companion.net.LoginResult
 import com.beakon.companion.net.TokenResult
 import com.beakon.companion.net.userMessage
 import com.beakon.companion.tracking.TrackingStatus
+import com.beakon.companion.ui.screens.Dashboard
 import java.security.SecureRandom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -388,6 +389,18 @@ class AppViewModel @JvmOverloads constructor(
                 }
             }
     }
+
+    /**
+     * The Map tab loads the Beakon web dashboard at the instance base URL.
+     * Null when no instance URL is stored yet.
+     */
+    fun dashboardUrl(): String? = Dashboard.url(state.instanceUrl ?: instanceUrl)
+
+    /** The current `session` cookie, synced into the dashboard WebView so it loads signed in. */
+    fun sessionCookieValue(): String? = state.session()
+
+    /** The fingerprint the user accepted for [host], if any — the WebView SSL fallback. */
+    fun pinnedFingerprintFor(host: String): String? = state.pinFor(host)
 
     fun logout() {
         state.setTracking(false)
