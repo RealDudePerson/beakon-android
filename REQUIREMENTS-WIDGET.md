@@ -93,7 +93,7 @@ available, so device-observed behaviour must never be claimed.**
    HTTP 500. Unit-tested for all four.
 5. `age_seconds` missing or null does not crash — falls back to
    `timestamp_unix`, then to "unknown age".
-6. WorkManager periodic work is scheduled with a 30-minute interval and a
+6. WorkManager periodic work is scheduled with a 15-minute interval and a
    network constraint, and survives reboot (the app already has a
    `BOOT_COMPLETED` receiver).
 7. Tile fetch failure yields a widget showing text + a placeholder, never a

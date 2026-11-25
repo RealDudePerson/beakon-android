@@ -27,7 +27,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object WidgetSchedule {
 
     /** Periodic refresh interval in minutes. */
-    const val REFRESH_INTERVAL_MINUTES = 30L
+    const val REFRESH_INTERVAL_MINUTES = 15L
 
     /** WorkManager unique names, so scheduling is idempotent and cancellable. */
     const val PERIODIC_WORK_NAME = "beakon_widget_refresh"
