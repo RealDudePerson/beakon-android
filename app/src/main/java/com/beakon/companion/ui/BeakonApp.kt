@@ -51,6 +51,14 @@ fun BeakonApp(viewModel: AppViewModel = viewModel()) {
         }
     }
 
+    // A widget tap (D3) opens the app at that person's map, on both a cold start
+    // and a warm one (singleTask delivers a new intent to onNewIntent).
+    LaunchedEffect(viewModel.pendingMapUrl, loggedIn) {
+        if (loggedIn && viewModel.pendingMapUrl != null) {
+            navController.navigate("map") { launchSingleTop = true }
+        }
+    }
+
     Scaffold(
         bottomBar = {
             if (loggedIn) {
@@ -77,7 +85,11 @@ fun BeakonApp(viewModel: AppViewModel = viewModel()) {
     ) { padding ->
         NavHost(
             navController = navController,
-            startDestination = if (loggedIn) "status" else "setup",
+            startDestination = when {
+                !loggedIn -> "setup"
+                viewModel.pendingMapUrl != null -> "map"
+                else -> "status"
+            },
             modifier = Modifier.padding(padding),
         ) {
             composable("setup") {

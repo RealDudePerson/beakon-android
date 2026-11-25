@@ -192,4 +192,17 @@ object WidgetTap {
             .build()
             .toString()
     }
+
+    /**
+     * True only when [candidateUrl] is HTTPS on the *same host and port* as the
+     * configured instance. The tap intent is delivered to the app's exported
+     * `MainActivity`, so an arbitrary intent from another app must not be able to
+     * steer the WebView at a foreign URL.
+     */
+    fun isSameInstance(candidateUrl: String?, instanceUrl: String?): Boolean {
+        val candidate = candidateUrl?.toHttpUrlOrNull() ?: return false
+        if (candidate.scheme != "https") return false
+        val instance = instanceUrl?.let { BeakonUrl.normalize(it)?.toHttpUrlOrNull() } ?: return false
+        return candidate.host == instance.host && candidate.port == instance.port
+    }
 }

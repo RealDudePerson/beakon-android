@@ -1,6 +1,7 @@
 package com.beakon.companion.widget
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -77,5 +78,21 @@ class WidgetMapMathTest {
     fun `an unusable instance URL yields no tap target`() {
         assertEquals(null, WidgetTap.mapUrl(null, "alice"))
         assertEquals(null, WidgetTap.mapUrl("http://insecure", "alice"))
+    }
+
+    @Test
+    fun `a widget tap target is accepted only for the configured instance`() {
+        assertTrue(WidgetTap.isSameInstance("https://example.com/map/alice", "https://example.com"))
+        assertTrue(WidgetTap.isSameInstance("https://example.com:8443/map/bob", "https://example.com:8443"))
+    }
+
+    @Test
+    fun `a foreign or cleartext tap target is rejected`() {
+        assertFalse(WidgetTap.isSameInstance("https://evil.com/map/alice", "https://example.com"))
+        assertFalse(WidgetTap.isSameInstance("https://example.com.evil.com/", "https://example.com"))
+        assertFalse(WidgetTap.isSameInstance("http://example.com/map/alice", "https://example.com"))
+        assertFalse(WidgetTap.isSameInstance("https://example.com:8443/map/alice", "https://example.com"))
+        assertFalse(WidgetTap.isSameInstance(null, "https://example.com"))
+        assertFalse(WidgetTap.isSameInstance("https://example.com/map/alice", null))
     }
 }

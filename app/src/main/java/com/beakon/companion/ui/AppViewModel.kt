@@ -25,6 +25,7 @@ import com.beakon.companion.net.TokenResult
 import com.beakon.companion.net.userMessage
 import com.beakon.companion.tracking.TrackingStatus
 import com.beakon.companion.ui.screens.Dashboard
+import com.beakon.companion.widget.WidgetTap
 import java.security.SecureRandom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -207,6 +208,8 @@ class AppViewModel @JvmOverloads constructor(
         certificateWarning = null
         certificateRejected = false
         setupMessage = null
+        // A different instance invalidates any pending widget map target.
+        pendingMapUrl = null
     }
 
     fun onUsernameChanged(value: String) {
@@ -391,10 +394,27 @@ class AppViewModel @JvmOverloads constructor(
     }
 
     /**
-     * The Map tab loads the Beakon web dashboard at the instance base URL.
-     * Null when no instance URL is stored yet.
+     * A person's map URL a widget tap asked the app to open. Null normally, so
+     * the Map tab shows the dashboard base URL. Validated against the configured
+     * instance before it is stored (the tap intent reaches an exported activity).
      */
-    fun dashboardUrl(): String? = Dashboard.url(state.instanceUrl ?: instanceUrl)
+    var pendingMapUrl by mutableStateOf<String?>(null)
+        private set
+
+    /** Records a widget tap's target, but only for the configured instance. */
+    fun openMapFromWidget(url: String?) {
+        if (WidgetTap.isSameInstance(url, state.instanceUrl)) {
+            pendingMapUrl = url
+        }
+    }
+
+    /**
+     * The Map tab loads the Beakon web dashboard at the instance base URL, or a
+     * person's map when a widget tap requested one. Null when no instance URL is
+     * stored yet.
+     */
+    fun dashboardUrl(): String? =
+        pendingMapUrl ?: Dashboard.url(state.instanceUrl ?: instanceUrl)
 
     /** The current `session` cookie, synced into the dashboard WebView so it loads signed in. */
     fun sessionCookieValue(): String? = state.session()
@@ -411,6 +431,7 @@ class AppViewModel @JvmOverloads constructor(
         history = emptyList()
         latest = null
         historyMessage = null
+        pendingMapUrl = null
         // A later sign-in must fetch immediately rather than inherit the TTL.
         lastHistoryAttemptAt = null
     }
