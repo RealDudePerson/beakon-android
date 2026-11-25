@@ -38,19 +38,26 @@ Durable detail lives in the wiki: `~/wiki/domains/beakon-android.md`.
   not rate-limited.
 - Verified by **231 unit tests** + manifest inspection. **Device behaviour is NOT verified.**
 
-## Signing — READ BEFORE CUTTING A RELEASE
+## Signing
 
 - The build uses a permanent keystore when
   `~/projects/beakon-signing/signing.properties` exists; otherwise it **silently falls
-  back to the debug keystore**.
-- **That keystore is NOT present on this host.** The 1.6 release APK is therefore signed
-  `CN=Android Debug`. If the build on the phone carries the permanent key, Android will
-  **reject the update** and an uninstall (which loses settings) is the only workaround.
-- The build code resolves `../beakon-signing` relative to the repo, i.e.
-  `~/projects/beakon-signing`. An older comment and the README both said
+  back to the debug keystore**. Always confirm with
+  `apksigner verify --print-certs <apk>` — a green build says nothing about the key.
+- **A NEW key was generated 2026-11-24** at `~/projects/beakon-signing/beakon-release.jks`
+  (alias `beakon`, RSA 4096, validity 10950 days, `CN=Beakon Companion, O=Beakon, C=US`).
+  `./gradlew signingReport` should show `Config: permanent` for every variant.
+- **The keystore AND its password are backed up in Vaultwarden** as
+  *"Beakon Companion signing keystore"* (org agents / Default collection), with the `.jks`
+  attached. Restore from there if this host is rebuilt. The previous key was never backed
+  up anywhere and was lost — that is why 1.6 was re-keyed.
+- **Consequence of the re-key:** every release up to and including 1.5.1 was signed with a
+  *different* key, so **installing 1.6 over an older build requires an uninstall first**,
+  which clears app settings (server URL and credentials must be re-entered). Future
+  releases signed with this key will upgrade in place normally.
+- Build code resolves `../beakon-signing` relative to the repo, i.e.
+  `~/projects/beakon-signing`. An older comment and the README said
   `~/workspace/beakon-signing` — both are wrong.
-- Always confirm with `apksigner verify --print-certs <apk>`; a green build says nothing
-  about which key signed it.
 
 ## Build evidence
 
