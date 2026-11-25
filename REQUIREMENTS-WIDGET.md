@@ -70,12 +70,12 @@ Answered "1" to the five-question batch — i.e. **the first option in each**:
 - **Map:** OSM tile bitmap with a marker pin composited on top (= D4).
 - **Staleness:** always show the map; the age text conveys how stale it is (= D5).
 
-## Open questions (need the user — cannot be inferred)
+## Resolved (2026-11-21) — no open questions remain
 
-- **Q1** — Draw the `trail` polyline behind the marker, or only the latest point?
-  (The API returns the trail; drawing it is more work but shows recent movement.)
-- **Q2** — Show battery / charging in the widget (the API returns `batt` and
-  `ischarging`), or keep the widget to map + name + age?
+- **Trail:** latest point only. A single marker, nothing drawn behind it.
+- **Battery:** not shown. The widget is map + display name + age.
+
+Spec is complete and approved. Ready to build.
 
 ## Acceptance criteria
 
