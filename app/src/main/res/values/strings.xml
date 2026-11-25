@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">Beakon</string>
+    <string name="widget_label">Beakon location</string>
+    <string name="widget_description">Shows where someone who shares their location with you is right now.</string>
+    <string name="widget_map_description">Map of the person\'s latest shared location</string>
 </resources>

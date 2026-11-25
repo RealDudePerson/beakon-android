@@ -60,6 +60,38 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          Location-sharing widget. exported="false": only the app and the system
+          widget host should reach it, and the provider does nothing but schedule
+          WidgetWorker and refresh its own RemoteViews.
+        -->
+        <receiver
+            android:name=".widget.BeakonWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/beakon_widget_info" />
+        </receiver>
+
+        <!--
+          Placement-time configuration (D1). The launcher starts it to choose the
+          person a widget is pinned to, so it must be reachable from the launcher
+          (a different app): exported="true". It exposes no data and writes only
+          the chosen username into the app's own preferences.
+        -->
+        <activity
+            android:name=".widget.BeakonWidgetConfigActivity"
+            android:exported="true"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AppWidgetProvider metadata (acceptance criterion 1).
+
+  updatePeriodMillis is 0 on purpose: the system's periodic update cannot go
+  below 30 minutes, and refresh is driven by WorkManager (WidgetWorker) with a
+  network constraint. The configure activity pins the widget to one person at
+  placement time (D1).
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="com.beakon.companion.widget.BeakonWidgetConfigActivity"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/beakon_widget"
+    android:minHeight="140dp"
+    android:minWidth="180dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="3"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

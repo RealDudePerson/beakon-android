@@ -118,6 +118,31 @@ class AppPreferences(
         get() = readThemeMode()
         set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
 
+    /**
+     * The username each home-screen widget is pinned to (D1: one widget = one
+     * person), keyed by `appWidgetId`. Null means "use the first sharer", which
+     * is also the fallback when the pinned person stops reporting.
+     */
+    fun widgetPerson(appWidgetId: Int): String? =
+        prefs.getString(widgetPersonKey(appWidgetId), null)
+
+    fun setWidgetPerson(appWidgetId: Int, username: String?) {
+        prefs.edit().apply {
+            if (username.isNullOrBlank()) {
+                remove(widgetPersonKey(appWidgetId))
+            } else {
+                putString(widgetPersonKey(appWidgetId), username)
+            }
+        }.apply()
+    }
+
+    /** Forgets a removed widget's pinned person. */
+    fun removeWidgetPerson(appWidgetId: Int) {
+        prefs.edit().remove(widgetPersonKey(appWidgetId)).apply()
+    }
+
+    private fun widgetPersonKey(appWidgetId: Int) = "$KEY_WIDGET_PERSON_PREFIX$appWidgetId"
+
     private fun readThemeMode(): ThemeMode =
         runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null) ?: "") }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -157,5 +182,6 @@ class AppPreferences(
         private const val KEY_BOOT_START = "start_tracking_on_boot"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_LAST_ERROR = "last_tracking_error"
+        private const val KEY_WIDGET_PERSON_PREFIX = "widget_person_"
     }
 }

@@ -48,6 +48,22 @@ sealed interface LocationsResult {
     data class ServerError(val code: Int) : LocationsResult
 }
 
+/**
+ * Outcome of `GET /api/locations/shared` — the widget's data source.
+ *
+ * An HTTP 500 (the server's documented failure shape) is a [ServerError], never
+ * an empty [Success]: "the server is down" and "nobody shares with you" must
+ * not be confused, or the widget would silently claim there is nobody to show.
+ */
+sealed interface SharedLocationsResult {
+    data class Success(val people: List<SharedPersonDto>) : SharedLocationsResult
+    data object AuthRequired : SharedLocationsResult
+    data class CertificateError(val message: String) : SharedLocationsResult
+    data class NetworkError(val message: String) : SharedLocationsResult
+    data class ParseError(val message: String) : SharedLocationsResult
+    data class ServerError(val code: Int) : SharedLocationsResult
+}
+
 // --- Actionable, human-readable messages. Never fail silently. ---
 
 fun SendResult.userMessage(): String? = when (this) {

@@ -186,6 +186,54 @@ class BeakonClient(
             LocationsResult.ParseError(e.message ?: e.javaClass.simpleName)
         }
 
+    /**
+     * `GET /api/locations/shared` — the people who share their location with the
+     * caller, authenticated by the `secret` header (the stored API token).
+     *
+     * This reuses the app's one TLS client: platform trust by default, with the
+     * explicit fingerprint fallback only when the platform rejects the chain.
+     * The endpoint carries no rate limiter (only `recordlocation` does), so a
+     * widget read does not consume the 5-requests/300 s reporting budget.
+     */
+    fun fetchSharedLocations(secret: String): SharedLocationsResult {
+        val request = Request.Builder()
+            .url("$baseUrl/api/locations/shared")
+            .header("secret", secret)
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                when {
+                    response.code == 401 || response.code == 403 -> SharedLocationsResult.AuthRequired
+                    // The server documents HTTP 500 with {"people": [], "error": ...}
+                    // on failure. That is an error state, never "nobody shares".
+                    !response.isSuccessful -> SharedLocationsResult.ServerError(response.code)
+                    else -> parseSharedLocations(response.body?.string().orEmpty())
+                }
+            }
+        } catch (e: SSLException) {
+            SharedLocationsResult.CertificateError(TlsSupport.describeTlsFailure(e))
+        } catch (e: IOException) {
+            SharedLocationsResult.NetworkError(e.message ?: e.javaClass.simpleName)
+        } catch (e: Exception) {
+            SharedLocationsResult.ParseError("unexpected error reading response: ${e.message}")
+        }
+    }
+
+    /**
+     * Decodes a `/api/locations/shared` body. A decode failure is a
+     * [SharedLocationsResult.ParseError]: the server answered, so the problem is
+     * the response shape, not connectivity. Extracted from [fetchSharedLocations]
+     * so it is exercisable without a live server.
+     */
+    internal fun parseSharedLocations(body: String): SharedLocationsResult =
+        try {
+            val parsed = json.decodeFromString(SharedPeopleResponse.serializer(), body)
+            SharedLocationsResult.Success(parsed.people)
+        } catch (e: SerializationException) {
+            SharedLocationsResult.ParseError(e.message ?: e.javaClass.simpleName)
+        }
+
     private fun parseRetryAfter(response: Response): Long? =
         response.header("Retry-After")?.trim()?.toLongOrNull()
 

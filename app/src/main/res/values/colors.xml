@@ -2,4 +2,10 @@
 <resources>
     <color name="beakon_primary">#1B5E20</color>
     <color name="ic_launcher_background">#1B5E20</color>
+
+    <!-- Widget surface and text. RemoteViews cannot follow the Compose theme,
+         so these are fixed light colours. -->
+    <color name="widget_background">#F2F2F2</color>
+    <color name="widget_text">#1A1A1A</color>
+    <color name="widget_text_muted">#666666</color>
 </resources>

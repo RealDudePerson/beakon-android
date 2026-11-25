@@ -129,6 +129,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.okhttp)
     implementation(libs.play.services.location)
+    // Periodic widget refresh (WidgetWorker). WorkManager's floor for periodic
+    // work is 15 minutes; the widget uses 30 (acceptance criterion 6).
+    implementation(libs.androidx.work.runtime.ktx)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 

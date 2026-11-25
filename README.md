@@ -17,6 +17,13 @@ as a list and on a map. See `REQUIREMENTS.md` for the full specification.
   user lands on the dashboard without logging in again. The native osmdroid
   map was removed in 1.5: it duplicated what the server already renders.
 - **History** — recent points: time, coordinates, battery/charging.
+- **Widget** — a home-screen widget showing one person's latest shared location:
+  an OpenStreetMap tile composited with a marker pin (a `RemoteViews` widget
+  cannot host a WebView), their display name, and an age string ("just now" /
+  "N min ago" / "N h ago"). It reads `GET /api/locations/shared` with the stored
+  API token, refreshes on a WorkManager periodic job (30 minutes, network
+  constrained), and taps through to that person's map. It only reads; the 90 s
+  reporting cadence is untouched.
 
 Tracking runs in a foreground service with a persistent notification, started only
 by an explicit user action. Location comes from `FusedLocationProviderClient`
