@@ -56,8 +56,8 @@ Facts established by reading `src/app.py` on the server (`ee20e9b`):
 | D1 | **One widget = one person**, chosen at placement time | Server supports several sharers; per-widget config lets you pin each. Falls back to "the first sharer" if the chosen person stops sharing. |
 | D2 | **Refresh every 15 minutes** via `WorkManager` periodic work | The Android/WorkManager floor — freshest possible without a foreground service. **Verified:** the 5 req/300 s limit is keyed to `recordlocation` only (`rate_key = 'recordlocation:' + _client_address()`); `/api/locations/shared` carries no rate limiter, so widget reads do not consume the reporting budget. |
 | D3 | **Tap opens the app at that person's map** (`/map/<username>`) | Simplest "prompt to view" that works with a `RemoteViews` tap target. |
-| D4 | **OSM tile + marker composited to a bitmap** | The only way to show a map in a widget. Reuse the existing descriptive User-Agent and the app's existing tile cache policy. |
-| D5 | **Always render the map; age text always shown** | Staleness is conveyed by the text ("4 min ago" / "3 h ago") rather than hiding data. |
+| D4 | **OSM tile grid + marker composited to a bitmap** | The only way to show a map in a widget. A grid of tiles stitched around the point (not one tile — a point near its tile's edge left most of the frame grey in 1.6). The bitmap is sized from the widget's actual width at refresh time. Reuse the existing descriptive User-Agent and the app's existing tile cache policy. |
+| D5 | **Always render the map; age text always shown, stale fixes dimmed** | Staleness is conveyed by the text ("4 min ago" / "3 h ago" / "25 days ago") *and* by dimming the map and muting the age past 10 minutes, with a "Stale location" note — rather than hiding data. |
 | D6 | **Reuse the app's existing HTTP/TLS client** for the widget's fetch | One code path to audit, not two. |
 
 ## Confirmed by the user (2026-11-21)
@@ -67,8 +67,8 @@ Answered "1" to the five-question batch — i.e. **the first option in each**:
 - **Person:** configurable per widget, chosen at placement time (= D1).
 - **Refresh:** every **15 minutes** (= D2, updated from 30).
 - **Prompt:** tapping the widget opens the app at that person's map (= D3).
-- **Map:** OSM tile bitmap with a marker pin composited on top (= D4).
-- **Staleness:** always show the map; the age text conveys how stale it is (= D5).
+- **Map:** OSM tile-grid bitmap with a marker pin composited on top (= D4), sized from the widget's actual width.
+- **Staleness:** always show the map; the age text conveys how stale it is (= D5), and fixes older than 10 minutes are dimmed with a "Stale location" note.
 
 ## Resolved (2026-11-21) — no open questions remain
 
@@ -85,9 +85,10 @@ available, so device-observed behaviour must never be claimed.**
 1. `AppWidgetProvider` is declared in `AndroidManifest.xml` with
    `android:exported="false"` and an `appwidget-provider` XML metadata resource.
 2. The widget renders: map bitmap, person's display name, and an age string
-   derived from `age_seconds` ("just now" / "N min ago" / "N h ago").
+   derived from `age_seconds` ("just now" / "N min ago" / "N h ago" / "N days ago").
 3. A pure function maps `age_seconds` -> display string, unit-tested at
-   boundaries (0, 59, 60, 3599, 3600, large).
+   boundaries (0, 59, 60, 3599, 3600, large, days), plus a pure staleness
+   decision past 600 seconds.
 4. A pure function maps `(people, chosenUsername)` -> the widget's view state,
    including: person present; person absent but shared-before; empty list;
    HTTP 500. Unit-tested for all four.

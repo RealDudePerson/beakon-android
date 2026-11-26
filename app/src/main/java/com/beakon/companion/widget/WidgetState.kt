@@ -49,6 +49,13 @@ object WidgetSchedule {
 object WidgetAge {
 
     /**
+     * A fix older than this is stale — the server group view's rule (10 minutes).
+     * The widget dims the map and marks the age stale past this point instead of
+     * hiding the person: a stale pin is still shown, just honestly.
+     */
+    const val STALE_AFTER_SECONDS = 600L
+
+    /**
      * @param ageSeconds the server's `age_seconds`, or null when absent.
      * @param timestampUnix the point's epoch seconds, or null when absent.
      * @param nowSeconds the current epoch seconds (injected for testability).
@@ -61,8 +68,16 @@ object WidgetAge {
         return when {
             seconds < 60 -> "just now"
             seconds < 3_600 -> "${seconds / 60} min ago"
-            else -> "${seconds / 3_600} h ago"
+            seconds < 86_400 -> "${seconds / 3_600} h ago"
+            seconds / 86_400 == 1L -> "1 day ago"
+            else -> "${seconds / 86_400} days ago"
         }
+    }
+
+    /** True when the fix is older than [STALE_AFTER_SECONDS]. Unknown age is not stale. */
+    fun isStale(ageSeconds: Long?, timestampUnix: Long?, nowSeconds: Long): Boolean {
+        val age = ageSeconds ?: timestampUnix?.let { nowSeconds - it } ?: return false
+        return age.coerceAtLeast(0) > STALE_AFTER_SECONDS
     }
 }
 

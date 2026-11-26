@@ -50,6 +50,49 @@ class WidgetMapMathTest {
     }
 
     @Test
+    fun `the grid covers every corner of the bitmap, even at a tile edge`() {
+        // daniel2 sits ~90% across its tile: the single-tile version left the
+        // right of the bitmap grey. The grid must cover all four corners for
+        // points at any fraction within their tile.
+        val width = 480
+        val height = 240
+        for (lon in listOf(-122.0, -0.1278, 0.0, 45.5, 120.0)) {
+            val placements = WidgetRenderer.gridTiles(33.0, lon, width, height, zoom = 15)
+            for ((x, y) in listOf(
+                0 to 0, width - 1 to 0, 0 to height - 1, width - 1 to height - 1,
+            )) {
+                val covered = placements.any { p ->
+                    x >= p.destLeft && x < p.destLeft + WidgetRenderer.TILE_SIZE &&
+                        y >= p.destTop && y < p.destTop + WidgetRenderer.TILE_SIZE
+                }
+                assertTrue("corner ($x, $y) uncovered for lon $lon", covered)
+            }
+        }
+    }
+
+    @Test
+    fun `the point's own tile covers the canvas centre, so the pin sits on the map`() {
+        val width = 480
+        val height = 240
+        for ((lat, lon) in listOf(33.0 to -117.0, 51.5074 to -0.1278, 0.0 to 0.0)) {
+            val placements = WidgetRenderer.gridTiles(lat, lon, width, height, zoom = 15)
+            val own = placements.firstOrNull { p ->
+                p.tileX == WidgetRenderer.tileX(lon, 15) &&
+                    p.tileY == WidgetRenderer.tileY(lat, 15)
+            }
+            assertTrue("point's own tile missing for $lat,$lon", own != null)
+            assertTrue(own!!.destLeft <= width / 2f && width / 2f < own.destLeft + 256)
+            assertTrue(own.destTop <= height / 2f && height / 2f < own.destTop + 256)
+        }
+    }
+
+    @Test
+    fun `the grid stays a handful of tiles at the largest capped bitmap`() {
+        val placements = WidgetRenderer.gridTiles(33.0, -117.0, 1200, 480, zoom = 15)
+        assertTrue("tiles=${placements.size}", placements.size <= 18)
+    }
+
+    @Test
     fun `the tile URL is the OSM PNG for the point`() {
         assertEquals(
             "https://tile.openstreetmap.org/12/2046/1362.png",

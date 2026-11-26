@@ -128,15 +128,25 @@ class WidgetWorker(
             }
         }
 
+        val stale = state is WidgetState.Person &&
+            WidgetAge.isStale(state.ageSeconds, state.timestampUnix, nowSeconds)
+        val (mapWidth, mapHeight) = mapSize(manager, id)
         val map = if (state is WidgetState.Person) {
             // Blocking tile fetch + decode: never on the main thread.
             withContext(Dispatchers.IO) {
-                WidgetRenderer.fetchTile(tileClient, state.lat, state.lon)?.let { tile ->
-                    WidgetRenderer.compose(tile, state.lat, state.lon)
+                val tiles = WidgetRenderer.fetchTileGrid(
+                    tileClient, state.lat, state.lon, mapWidth, mapHeight,
+                )
+                if (tiles.isEmpty()) {
+                    WidgetRenderer.placeholder(mapWidth, mapHeight)
+                } else {
+                    WidgetRenderer.composeGrid(
+                        tiles, state.lat, state.lon, mapWidth, mapHeight, stale = stale,
+                    )
                 }
-            } ?: WidgetRenderer.placeholder()
+            }
         } else {
-            WidgetRenderer.placeholder()
+            WidgetRenderer.placeholder(mapWidth, mapHeight)
         }
 
         val views = WidgetRenderer.remoteViews(
@@ -147,11 +157,33 @@ class WidgetWorker(
             message = message,
             map = map,
             tapUrl = tapUrl,
+            stale = stale,
         )
         manager.updateAppWidget(id, views)
     }
 
+    /**
+     * The map bitmap's pixel size, from the widget's actual width at refresh
+     * time. The old fixed 480x240 was upscaled and cropped by the ImageView
+     * whenever the widget was wider; sizing from the placement keeps the bitmap
+     * and the view the same aspect. The height is the ImageView's fixed height
+     * in `beakon_widget.xml` (120 dp). Both dimensions are capped, so the grid
+     * stays a handful of tiles and the bitmap stays small in memory.
+     */
+    private fun mapSize(manager: AppWidgetManager, appWidgetId: Int): Pair<Int, Int> {
+        val density = applicationContext.resources.displayMetrics.density
+        val options = manager.getAppWidgetOptions(appWidgetId)
+        val widthDp = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+        val widthPx = if (widthDp > 0) (widthDp * density).toInt() else WidgetRenderer.MAP_WIDTH
+        val heightPx = (MAP_IMAGE_HEIGHT_DP * density).toInt()
+        return widthPx.coerceIn(WidgetRenderer.MAP_WIDTH, 1200) to
+            heightPx.coerceIn(WidgetRenderer.MAP_HEIGHT, 480)
+    }
+
     companion object {
+
+        /** The map ImageView's height in `beakon_widget.xml`, in dp. */
+        private const val MAP_IMAGE_HEIGHT_DP = 120
 
         /** Schedules the surviving periodic refresh. Idempotent. */
         fun schedule(context: Context) {

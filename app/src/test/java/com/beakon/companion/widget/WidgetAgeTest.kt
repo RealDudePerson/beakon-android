@@ -1,6 +1,8 @@
 package com.beakon.companion.widget
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -38,9 +40,31 @@ class WidgetAgeTest {
     }
 
     @Test
-    fun `a large age is reported in whole hours`() {
-        assertEquals("24 h ago", WidgetAge.format(86_400, null, now))
-        assertEquals("240 h ago", WidgetAge.format(864_000, null, now))
+    fun `a day switches to days, not ever-growing hours`() {
+        assertEquals("23 h ago", WidgetAge.format(86_399, null, now))
+        assertEquals("1 day ago", WidgetAge.format(86_400, null, now))
+        assertEquals("10 days ago", WidgetAge.format(864_000, null, now))
+        // The screenshot's case: 610 hours is 25 days, not "610 h ago".
+        assertEquals("25 days ago", WidgetAge.format(2_196_000, null, now))
+    }
+
+    @Test
+    fun `staleness starts just past ten minutes`() {
+        assertFalse(WidgetAge.isStale(599, null, now))
+        assertFalse(WidgetAge.isStale(600, null, now))
+        assertTrue(WidgetAge.isStale(601, null, now))
+        assertTrue(WidgetAge.isStale(2_196_000, null, now))
+    }
+
+    @Test
+    fun `an unknown age is not called stale`() {
+        assertFalse(WidgetAge.isStale(null, null, now))
+    }
+
+    @Test
+    fun `staleness falls back to timestamp_unix like the age string`() {
+        assertTrue(WidgetAge.isStale(null, now - 3_600, now))
+        assertFalse(WidgetAge.isStale(null, now - 60, now))
     }
 
     @Test
